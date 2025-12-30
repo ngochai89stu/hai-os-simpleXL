@@ -86,15 +86,9 @@ static void theme_selector_cb(lv_event_t *e) {
 static void on_create(void) {
     ESP_LOGI(TAG, "Display Settings screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -163,8 +157,6 @@ static void on_create(void) {
     lv_obj_set_style_bg_color(s_timeout_setting, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
     lv_obj_set_style_text_font(s_timeout_setting, &lv_font_montserrat_14, 0);
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_DISPLAY_SETTING, "Display Setting", container, s_content);
@@ -178,23 +170,21 @@ static void on_show(void) {
     #endif
     
     // Load and update brightness slider from current brightness
-    if (s_brightness_slider != NULL && lvgl_port_lock(0)) {
+    if (s_brightness_slider != NULL) {
         uint8_t current_brightness = sx_platform_get_brightness();
         lv_slider_set_value(s_brightness_slider, current_brightness, LV_ANIM_OFF);
         
         // Add event handler if not already added
         lv_obj_add_event_cb(s_brightness_slider, brightness_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
-        lvgl_port_unlock();
     }
     
     // Load and update theme selector
-    if (s_theme_selector != NULL && lvgl_port_lock(0)) {
+    if (s_theme_selector != NULL) {
         sx_theme_type_t current_theme = sx_theme_get_type();
         lv_dropdown_set_selected(s_theme_selector, current_theme);
         
         // Add event handler if not already added
         lv_obj_add_event_cb(s_theme_selector, theme_selector_cb, LV_EVENT_VALUE_CHANGED, NULL);
-        lvgl_port_unlock();
     }
 }
 
@@ -211,16 +201,13 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_DISPLAY_SETTING);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 
