@@ -34,15 +34,9 @@ static void bluetooth_connection_cb(sx_bluetooth_state_t state, const char *devi
 static void on_create(void) {
     ESP_LOGI(TAG, "Bluetooth Settings screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -97,18 +91,13 @@ static void on_create(void) {
     // Register Bluetooth connection callback
     sx_bluetooth_set_connection_callback(bluetooth_connection_cb);
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_BLUETOOTH_SETTING, "Bluetooth Settings", container, s_device_list);
     #endif
     
-    // Initial status update (need to lock again)
-    if (lvgl_port_lock(0)) {
-        update_status();
-        lvgl_port_unlock();
-    }
+    // Initial status update
+    update_status();
 }
 
 static void update_status(void) {
@@ -290,10 +279,7 @@ static void on_show(void) {
     #endif
     
     // Refresh device list when showing screen
-    if (lvgl_port_lock(0)) {
-        refresh_device_list();
-        lvgl_port_unlock();
-    }
+    refresh_device_list();
 }
 
 static void on_hide(void) {
@@ -309,31 +295,22 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_BLUETOOTH_SETTING);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 
 static void on_update(const sx_state_t *state) {
-    if (!lvgl_port_lock(0)) {
-        return;
-    }
-    
     // Update connection status
     if (state != NULL && s_status_label != NULL) {
         update_status();
         refresh_device_list();
     }
-    
-    lvgl_port_unlock();
 }
 
 // Register this screen
