@@ -211,7 +211,8 @@ esp_err_t sx_protocol_ws_start(const sx_protocol_ws_config_t *cfg) {
         .disable_auto_reconnect = false,
         .reconnect_timeout_ms = (s_cfg.reconnect_ms > 0) ? s_cfg.reconnect_ms : 5000,
     };
-    // Note: auth_token support requires custom header setup - TODO if needed
+    // Note: auth_token support requires custom header setup via esp_websocket_client_set_headers()
+    //       Currently not needed, but can be added if authentication is required
     s_client = esp_websocket_client_init(&ws_cfg);
     if (!s_client) return ESP_ERR_NO_MEM;
     esp_websocket_register_events(s_client, WEBSOCKET_EVENT_ANY, websocket_event_handler, NULL);
