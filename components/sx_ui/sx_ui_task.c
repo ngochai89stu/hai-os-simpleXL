@@ -153,7 +153,9 @@ static void sx_ui_task(void *arg) {
             }
             
             // Phase 2: Navigate to boot screen initially
-            ui_router_navigate_to(SCREEN_ID_BOOT);
+            // NOTE: ui_router_navigate_to() internally takes LVGL lock, so we must
+            // not call it while already holding the LVGL lock here.
+            // We'll navigate right after releasing the lock below.
             
             // Post UI ready event
             sx_event_t evt = {
@@ -166,6 +168,11 @@ static void sx_ui_task(void *arg) {
         }
 
         lvgl_port_unlock();
+
+        // Navigate to boot screen AFTER releasing LVGL lock to avoid nested locking.
+        if (disp != NULL) {
+            ui_router_navigate_to(SCREEN_ID_BOOT);
+        }
 
         if (disp == NULL) {
             vTaskDelay(portMAX_DELAY);
@@ -245,7 +252,11 @@ static void sx_ui_task(void *arg) {
             if (current_screen != SCREEN_ID_MAX) {
                 const ui_screen_callbacks_t *callbacks = ui_screen_registry_get(current_screen);
                 if (callbacks && callbacks->on_update) {
-                    callbacks->on_update(&state);
+                    // Ensure screen updates are performed under LVGL lock.
+                    if (lvgl_port_lock(0)) {
+                        callbacks->on_update(&state);
+                        lvgl_port_unlock();
+                    }
                 }
             }
         }
