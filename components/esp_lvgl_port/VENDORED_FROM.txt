@@ -1,0 +1,5 @@
+Source repo: espressif/esp-bsp
+Source path: components/esp_lvgl_port
+Pinned commit: d15cf39696339b128eceb75665d806d8bd10959a
+Date/time: 2025-12-27
+Rationale: avoid registry dependency

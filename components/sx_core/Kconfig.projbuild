@@ -1,0 +1,343 @@
+menu "SimpleXL Core Configuration"
+
+    menu "OTA Configuration"
+        config SX_OTA_DEFAULT_URL
+            string "Default OTA URL"
+            default "https://api.example.com/ota/"
+            help
+                Default OTA server URL for firmware updates.
+                Can be overridden via Settings service at runtime.
+    endmenu
+
+    menu "Language Configuration"
+        choice SX_DEFAULT_LANGUAGE
+            prompt "Default Language"
+            default SX_LANGUAGE_VI_VN
+            help
+                Select default display language for SimpleXL UI
+
+            config SX_LANGUAGE_VI_VN
+                bool "Vietnamese (Tiếng Việt)"
+            config SX_LANGUAGE_EN_US
+                bool "English"
+            config SX_LANGUAGE_ZH_CN
+                bool "Chinese (Simplified) - 简体中文"
+            config SX_LANGUAGE_ZH_TW
+                bool "Chinese (Traditional) - 繁體中文"
+            config SX_LANGUAGE_JA_JP
+                bool "Japanese - 日本語"
+            config SX_LANGUAGE_KO_KR
+                bool "Korean - 한국어"
+        endchoice
+    endmenu
+
+    menu "Display Configuration"
+        choice SX_DISPLAY_TYPE
+            prompt "Display Type"
+            default SX_DISPLAY_LCD_ST7796_320X480
+            help
+                Select display type. Pin configuration is handled by sx_platform.
+
+            config SX_DISPLAY_LCD_ST7796_320X480
+                bool "LCD ST7796 320x480 (IPS)"
+            config SX_DISPLAY_LCD_ST7789_240X320
+                bool "LCD ST7789 240x320 (IPS)"
+            config SX_DISPLAY_LCD_ILI9341_240X320
+                bool "LCD ILI9341 240x320"
+            config SX_DISPLAY_OLED_SSD1306_128X64
+                bool "OLED SSD1306 128x64"
+            config SX_DISPLAY_CUSTOM
+                bool "Custom Display (configure via sx_platform)"
+        endchoice
+
+        config SX_DISPLAY_TOUCH_ENABLE
+            bool "Enable Touch Panel"
+            default y
+            help
+                Enable touch panel support.
+                Touch driver is automatically detected by sx_platform.
+
+        config SX_DISPLAY_BRIGHTNESS_DEFAULT
+            int "Default Brightness (%)"
+            default 80
+            range 0 100
+            help
+                Default display brightness (0-100%).
+                Can be adjusted at runtime via Settings service.
+    endmenu
+
+    menu "Storage Configuration"
+        config SX_SD_CARD_ENABLE
+            bool "Enable SD Card"
+            default y
+            help
+                Enable SD Card support.
+                Pin configuration is handled by sx_platform.
+
+        choice SX_SD_CARD_INTERFACE
+            prompt "SD Card Interface Type"
+            default SX_SD_CARD_SPI
+            depends on SX_SD_CARD_ENABLE
+            help
+                Select SD Card interface type.
+
+            config SX_SD_CARD_SPI
+                bool "SPI Interface"
+            config SX_SD_CARD_MMC
+                bool "SDMMC Interface"
+        endchoice
+    endmenu
+
+    menu "Service Configuration"
+        menu "STT (Speech-to-Text) Configuration"
+            config SX_STT_ENDPOINT_URL
+                string "STT Endpoint URL"
+                default ""
+                help
+                    STT service endpoint URL.
+                    Can be configured via Settings service at runtime.
+
+            config SX_STT_API_KEY
+                string "STT API Key"
+                default ""
+                help
+                    STT service API key.
+                    Can be configured via Settings service at runtime.
+        endmenu
+
+        menu "TTS (Text-to-Speech) Configuration"
+            config SX_TTS_ENDPOINT_URL
+                string "TTS Endpoint URL"
+                default ""
+                help
+                    TTS service endpoint URL.
+                    Can be configured via Settings service at runtime.
+
+            config SX_TTS_API_KEY
+                string "TTS API Key"
+                default ""
+                help
+                    TTS service API key.
+                    Can be configured via Settings service at runtime.
+        endmenu
+
+        menu "Telegram Configuration"
+            config SX_TELEGRAM_BOT_TOKEN
+                string "Telegram Bot Token"
+                default ""
+                help
+                    Telegram bot token.
+                    Can be configured via Settings service at runtime.
+
+            config SX_TELEGRAM_CHAT_ID
+                string "Telegram Chat ID"
+                default ""
+                help
+                    Telegram chat ID.
+                    Can be configured via Settings service at runtime.
+        endmenu
+
+        menu "Online Music Configuration"
+            config SX_MUSIC_ONLINE_AUTH_MAC
+                string "Online Music Auth MAC"
+                default ""
+                help
+                    MAC address for online music authentication.
+                    Can be configured via Settings service at runtime.
+
+            config SX_MUSIC_ONLINE_AUTH_SECRET
+                string "Online Music Auth Secret"
+                default ""
+                help
+                    Secret key for online music authentication.
+                    Can be configured via Settings service at runtime.
+        endmenu
+    endmenu
+
+    menu "Wake Word Configuration"
+        choice SX_WAKE_WORD_TYPE
+            prompt "Wake Word Implementation Type"
+            default SX_WAKE_WORD_ESP_SR
+            help
+                Choose the type of wake word implementation to use.
+
+            config SX_WAKE_WORD_DISABLED
+                bool "Disabled"
+                help
+                    Disable wake word detection
+
+            config SX_WAKE_WORD_ESP_SR
+                bool "ESP-SR Wakenet (with AFE)"
+                depends on SX_AUDIO_AFE_ESP_SR_ENABLE && SPIRAM
+                help
+                    Use ESP-SR wakenet models with AFE support.
+                    Requires ESP32-S3/P4 and PSRAM.
+
+            config SX_WAKE_WORD_CUSTOM
+                bool "Custom Wake Word (Multinet)"
+                depends on (IDF_TARGET_ESP32S3 || IDF_TARGET_ESP32P4) && SPIRAM
+                help
+                    Use custom wake word with Multinet model.
+                    Requires ESP32-S3/P4 and PSRAM.
+        endchoice
+
+        config SX_WAKE_WORD_MODEL_PATH
+            string "Wake Word Model Path"
+            default ""
+            depends on SX_WAKE_WORD_ESP_SR || SX_WAKE_WORD_CUSTOM
+            help
+                Path to wake word model file.
+                Can be configured via Settings service at runtime.
+
+        config SX_WAKE_WORD_THRESHOLD
+            int "Wake Word Threshold (%)"
+            default 50
+            range 1 99
+            depends on SX_WAKE_WORD_ESP_SR || SX_WAKE_WORD_CUSTOM
+            help
+                Wake word detection threshold (1-99%).
+                Lower value = more sensitive.
+                Can be configured via Settings service at runtime.
+
+        config SX_WAKE_WORD_CUSTOM_TEXT
+            string "Custom Wake Word Text"
+            default "xiao zhi"
+            depends on SX_WAKE_WORD_CUSTOM
+            help
+                Custom wake word text (use pinyin for Chinese, separated by spaces).
+                Can be configured via Settings service at runtime.
+    endmenu
+
+    menu "Audio Configuration"
+        config SX_AUDIO_SAMPLE_RATE
+            int "Audio Sample Rate (Hz)"
+            default 16000
+            range 8000 48000
+            help
+                Default audio sample rate.
+                Can be changed at runtime per stream.
+
+        config SX_AUDIO_BUFFER_SIZE_MS
+            int "Audio Buffer Size (ms)"
+            default 100
+            range 50 500
+            help
+                Audio buffer size in milliseconds.
+                Larger buffer = more stable but higher latency.
+
+        config SX_AUDIO_HARDWARE_VOLUME_ENABLE
+            bool "Enable Hardware Volume Control"
+            default y
+            help
+                Enable hardware volume control via I2C codec (ES8388/ES8311).
+                Falls back to software volume if hardware not available.
+
+        choice SX_AUDIO_CODEC_TYPE
+            prompt "Audio Codec Type"
+            default SX_AUDIO_CODEC_AUTO
+            depends on SX_AUDIO_HARDWARE_VOLUME_ENABLE
+            help
+                Audio codec type for hardware volume control.
+                Auto-detect will try ES8388 first, then ES8311.
+
+            config SX_AUDIO_CODEC_AUTO
+                bool "Auto-detect (ES8388/ES8311)"
+            config SX_AUDIO_CODEC_ES8388
+                bool "ES8388"
+            config SX_AUDIO_CODEC_ES8311
+                bool "ES8311"
+        endchoice
+
+        config SX_AUDIO_POWER_SAVE_ENABLE
+            bool "Enable Audio Power Save"
+            default y
+            help
+                Enable automatic power save when audio is idle.
+                Reduces power consumption when not playing audio.
+
+        config SX_AUDIO_POWER_SAVE_TIMEOUT_MS
+            int "Audio Power Save Timeout (ms)"
+            default 15000
+            range 5000 60000
+            depends on SX_AUDIO_POWER_SAVE_ENABLE
+            help
+                Timeout before entering power save mode (milliseconds).
+    endmenu
+
+    menu "Feature Configuration"
+        config SX_FEATURE_MUSIC_ENABLE
+            bool "Enable Music Service"
+            default y
+            help
+                Enable SD Card music playback service.
+
+        config SX_FEATURE_RADIO_ENABLE
+            bool "Enable Radio Service"
+            default y
+            help
+                Enable online radio streaming service.
+
+        config SX_FEATURE_WEATHER_ENABLE
+            bool "Enable Weather Service"
+            default y
+            help
+                Enable weather information service.
+
+        config SX_FEATURE_NAVIGATION_ENABLE
+            bool "Enable Navigation Service"
+            default y
+            help
+                Enable navigation and route management service.
+
+        config SX_FEATURE_TELEGRAM_ENABLE
+            bool "Enable Telegram Service"
+            default y
+            help
+                Enable Telegram bot integration service.
+
+        config SX_FEATURE_BLUETOOTH_ENABLE
+            bool "Enable Bluetooth Service"
+            default y
+            help
+                Enable Bluetooth audio and pairing service.
+
+        config SX_FEATURE_MCP_SERVER_ENABLE
+            bool "Enable MCP Server"
+            default y
+            help
+                Enable Model Context Protocol (MCP) server for AI integration.
+    endmenu
+
+    menu "Network Configuration"
+        config SX_NETWORK_AUTO_RECONNECT
+            bool "Enable Auto Reconnect"
+            default y
+            help
+                Automatically reconnect WiFi when connection is lost.
+
+        config SX_NETWORK_RECONNECT_INTERVAL_MS
+            int "Reconnect Interval (ms)"
+            default 5000
+            range 1000 30000
+            depends on SX_NETWORK_AUTO_RECONNECT
+            help
+                WiFi reconnection interval in milliseconds.
+
+        config SX_MQTT_ENABLE
+            bool "Enable MQTT Protocol"
+            default y
+            help
+                Enable MQTT protocol support.
+
+        config SX_WEBSOCKET_ENABLE
+            bool "Enable WebSocket Protocol"
+            default y
+            help
+                Enable WebSocket protocol support.
+    endmenu
+
+endmenu
+
+
+
+

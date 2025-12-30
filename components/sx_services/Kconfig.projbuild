@@ -1,0 +1,31 @@
+menu "SimpleXL Audio Features"
+
+    config SX_CODEC_OPUS_ENABLE
+        bool "Enable Opus codec support"
+        default n
+        help
+            Enable Opus encoder/decoder using esp-opus-encoder library.
+            Requires: 78/esp-opus-encoder component
+
+    config SX_AUDIO_AFE_ESP_SR_ENABLE
+        bool "Enable ESP-SR AFE support"
+        default n
+        help
+            Enable Audio Front-End (AFE) using ESP-SR library.
+            Provides: AEC (Acoustic Echo Cancellation), VAD (Voice Activity Detection),
+            NS (Noise Suppression), AGC (Automatic Gain Control).
+            Requires: espressif/esp-sr component and model files
+
+    config SX_WAKE_WORD_ESP_SR_ENABLE
+        bool "Enable ESP-SR Wake Word detection"
+        default n
+        depends on SX_AUDIO_AFE_ESP_SR_ENABLE
+        help
+            Enable wake word detection using ESP-SR wakenet models.
+            Requires: ESP-SR wakenet model files
+
+endmenu
+
+
+
+

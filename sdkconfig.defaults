@@ -1,0 +1,11 @@
+# ============================================
+# SimpleXL defaults
+# ============================================
+
+# Logging
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+
+# FreeRTOS Timer Service task stack (Tmr Svc)
+# Fix stack overflow when sx_audio_power timer callback runs
+CONFIG_FREERTOS_TIMER_TASK_STACK_DEPTH=4096

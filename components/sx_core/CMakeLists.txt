@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+        "sx_bootstrap.c"
+        "sx_dispatcher.c"
+        "sx_orchestrator.c"
+        "sx_event_string_pool.c"
+        "sx_lazy_loader.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        nvs_flash
+        esp_event
+        sx_platform
+        sx_ui
+        sx_assets
+        sx_services
+)

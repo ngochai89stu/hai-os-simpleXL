@@ -1,0 +1,31 @@
+menu "SimpleXL UI Configuration"
+
+    config UI_USE_LVGL_MUSIC_DEMO
+        bool "Use LVGL Music Demo for Music Player Screen"
+        default n
+        depends on LV_USE_DEMO_MUSIC
+        help
+            When enabled, the Music Player screen will use the official LVGL Music Demo
+            (lv_demo_music) instead of the custom UI implementation.
+            
+            This requires LV_USE_DEMO_MUSIC to be enabled in LVGL configuration.
+
+    config SX_UI_THEME_DEFAULT
+        string "Default Theme"
+        default "dark"
+        help
+            Default UI theme (dark, light, auto).
+            Can be changed at runtime via Settings service.
+
+    config SX_UI_ANIMATION_ENABLE
+        bool "Enable UI Animations"
+        default y
+        help
+            Enable UI animations and transitions.
+            Disable to reduce CPU usage.
+
+endmenu
+
+
+
+

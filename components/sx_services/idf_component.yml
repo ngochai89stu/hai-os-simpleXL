@@ -1,0 +1,11 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/esp_audio_codec: ^2.3.0
+  # Opus encoder/decoder library
+  78/esp-opus-encoder: ~2.4.1
+  # ESP Speech Recognition library (for AFE and Wake Word)
+  espressif/esp-sr: ~2.2.1
+  # WebSocket client (for sx_protocol)
+  espressif/esp_websocket_client: "^1.0.0"
+
+

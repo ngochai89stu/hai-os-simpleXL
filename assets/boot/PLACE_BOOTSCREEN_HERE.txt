@@ -1,0 +1,23 @@
+PLACE YOUR BOOTSCREEN IMAGE HERE
+
+File name: bootscreen_320x480.png
+Size: 320x480 pixels
+Format: PNG (RGB)
+Location: assets/boot/bootscreen_320x480.png
+
+After placing the file, run:
+  python tools/convert_png_to_lvgl_rgb565.py
+
+This will generate:
+  components/sx_assets/generated/bootscreen_img.c
+  components/sx_assets/generated/bootscreen_img.h
+
+Then build:
+  idf.py build
+
+
+
+
+
+
+

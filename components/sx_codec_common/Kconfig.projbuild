@@ -1,0 +1,12 @@
+# SimpleXL Codec Common Kconfig
+
+menu "SimpleXL Codec Common"
+    config SX_CODEC_COMMON
+        bool "Enable SimpleXL Codec Common"
+        default y
+        help
+            Core enums/constants for codec-related modules.
+endmenu
+
+
+

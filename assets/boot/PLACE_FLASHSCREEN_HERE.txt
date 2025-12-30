@@ -1,0 +1,11 @@
+ĐẶT HÌNH NỀN FLASH SCREEN CỦA BẠN TẠI ĐÂY
+
+Tên tệp: flashscreen_320x480.png
+Kích thước: 320x480 pixel (chính xác)
+Định dạng: PNG (RGB)
+
+Vị trí: assets/boot/flashscreen_320x480.png
+
+Sau khi đặt hình ảnh, chạy:
+python tools/convert_flashscreen_to_lvgl_rgb565.py
+
