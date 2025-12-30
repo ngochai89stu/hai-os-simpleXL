@@ -269,15 +269,9 @@ static void nav_timer_cb(lv_timer_t *timer)
 static void on_create(void) {
     ESP_LOGI(TAG, "Navigation screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -442,8 +436,6 @@ static void on_create(void) {
         lv_timer_set_repeat_count(s_nav_timer, LV_ANIM_REPEAT_INFINITE);
     }
 
-    lvgl_port_unlock();
-    
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_GOOGLE_NAVIGATION, "Google Navigation", container, s_content);
     #endif
@@ -475,16 +467,13 @@ static void on_destroy(void) {
         s_overspeed_timer = NULL;
     }
 
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 

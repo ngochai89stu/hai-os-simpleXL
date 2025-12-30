@@ -18,15 +18,9 @@ static lv_obj_t *s_container = NULL;
 static void on_create(void) {
     ESP_LOGI(TAG, "Startup Image screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -87,8 +81,6 @@ static void on_create(void) {
         lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
     }
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_STARTUP_IMAGE_PICKER, "Startup Image Picker", container, s_image_list);
@@ -115,16 +107,13 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_STARTUP_IMAGE_PICKER);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 
