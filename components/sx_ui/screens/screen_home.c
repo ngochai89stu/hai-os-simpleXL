@@ -51,10 +51,7 @@ static void home_menu_item_click_cb(lv_event_t *e) {
         ui_screen_id_t screen_id = (ui_screen_id_t)(intptr_t)lv_obj_get_user_data(item);
         ESP_LOGI(TAG, "Home menu item clicked, navigating to screen: %d", screen_id);
         
-        if (lvgl_port_lock(0)) {
-            ui_router_navigate_to(screen_id);
-            lvgl_port_unlock();
-        }
+        ui_router_navigate_to(screen_id);
     }
 }
 
