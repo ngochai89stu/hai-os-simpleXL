@@ -76,15 +76,9 @@ static void send_btn_event_cb(lv_event_t *e) {
 static void on_create(void) {
     ESP_LOGI(TAG, "Chat screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -177,12 +171,7 @@ static void on_create(void) {
     #if SX_UI_VERIFY_MODE
     // Add touch probe for verification
     screen_common_add_touch_probe(container, "Chat Screen", SCREEN_ID_CHAT);
-    #endif
-    
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
-    #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_CHAT, "Chat", container, s_message_list);
     #endif
 }
@@ -201,12 +190,9 @@ static void on_hide(void) {
     #endif
 }
 
-static void add_message_to_list(const char *role, const char *content) {
+// Helper function without lock (for use when already holding lock)
+static void add_message_to_list_unlocked(const char *role, const char *content) {
     if (s_message_list == NULL || content == NULL || strlen(content) == 0) {
-        return;
-    }
-    
-    if (!lvgl_port_lock(0)) {
         return;
     }
     
@@ -266,9 +252,16 @@ static void add_message_to_list(const char *role, const char *content) {
     // Scroll to bottom with animation
     lv_obj_scroll_to_view(msg_bubble, LV_ANIM_ON);
     
-    lvgl_port_unlock();
-    
     ESP_LOGI(TAG, "Message added: %s - %s", role ? role : "unknown", content);
+}
+
+// Public wrapper with lock (for use from event callbacks and public API)
+static void add_message_to_list(const char *role, const char *content) {
+    if (!lvgl_port_lock(0)) {
+        return;
+    }
+    add_message_to_list_unlocked(role, content);
+    lvgl_port_unlock();
 }
 
 static void on_update(const sx_state_t *state) {
@@ -286,9 +279,9 @@ static void on_update(const sx_state_t *state) {
     // For chat screen, we mainly listen to events for new messages
     // State updates can be used for status changes
     if (strcmp(state->ui.status_text, "stt_result") == 0 && state->ui.last_user_message[0] != '\0') {
-        add_message_to_list("user", state->ui.last_user_message);
+        add_message_to_list_unlocked("user", state->ui.last_user_message);
     } else if (strcmp(state->ui.status_text, "tts_sentence") == 0 && state->ui.last_assistant_message[0] != '\0') {
-        add_message_to_list("assistant", state->ui.last_assistant_message);
+        add_message_to_list_unlocked("assistant", state->ui.last_assistant_message);
     }
 
     // Poll chatbot events and update UI
@@ -299,37 +292,33 @@ static void on_update(const sx_state_t *state) {
             // TTS started - show typing indicator
             ESP_LOGI(TAG, "TTS started");
             s_tts_speaking = true;
-            if (s_typing_indicator != NULL && lvgl_port_lock(0)) {
+            if (s_typing_indicator != NULL) {
                 lv_obj_clear_flag(s_typing_indicator, LV_OBJ_FLAG_HIDDEN);
                 lv_obj_scroll_to_view(s_typing_indicator, LV_ANIM_ON);
-                lvgl_port_unlock();
             }
             // Update TTS status
-            if (s_tts_status_label != NULL && lvgl_port_lock(0)) {
+            if (s_tts_status_label != NULL) {
                 lv_label_set_text(s_tts_status_label, "TTS: Speaking");
                 lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x5b7fff), 0);
-                lvgl_port_unlock();
             }
         } else if (evt.type == SX_EVT_CHATBOT_TTS_STOP) {
             // TTS stopped - hide typing indicator
             ESP_LOGI(TAG, "TTS stopped");
             s_tts_speaking = false;
-            if (s_typing_indicator != NULL && lvgl_port_lock(0)) {
+            if (s_typing_indicator != NULL) {
                 lv_obj_add_flag(s_typing_indicator, LV_OBJ_FLAG_HIDDEN);
-                lvgl_port_unlock();
             }
             // Update TTS status
-            if (s_tts_status_label != NULL && lvgl_port_lock(0)) {
+            if (s_tts_status_label != NULL) {
                 lv_label_set_text(s_tts_status_label, "TTS: Ready");
                 lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x888888), 0);
-                lvgl_port_unlock();
             }
         } else if (evt.type == SX_EVT_CHATBOT_EMOTION) {
             const char *emotion = (const char *)evt.ptr;
             if (emotion != NULL) {
                 ESP_LOGI(TAG, "Chatbot emotion: %s", emotion);
                 // Update emotion indicator label
-                if (s_emotion_label != NULL && lvgl_port_lock(0)) {
+                if (s_emotion_label != NULL) {
                     // Simple mapping from emotion string to emoji/text
                     const char *emoji = "🙂";
                     if (strstr(emotion, "happy") || strstr(emotion, "joy")) {
@@ -347,58 +336,52 @@ static void on_update(const sx_state_t *state) {
                     char buf[64];
                     snprintf(buf, sizeof(buf), "Emotion: %s", emoji);
                     lv_label_set_text(s_emotion_label, buf);
-                    lvgl_port_unlock();
                 }
                 free((void *)evt.ptr);
             }
         } else if (evt.type == SX_EVT_CHATBOT_CONNECTED) {
             ESP_LOGI(TAG, "Chatbot connected");
             s_chatbot_connected = true;
-            if (s_status_label != NULL && lvgl_port_lock(0)) {
+            if (s_status_label != NULL) {
                 lv_label_set_text(s_status_label, "● Connected");
                 lv_obj_set_style_text_color(s_status_label, lv_color_hex(0x44ff44), 0);
-                lvgl_port_unlock();
             }
         } else if (evt.type == SX_EVT_CHATBOT_DISCONNECTED) {
             ESP_LOGI(TAG, "Chatbot disconnected");
             s_chatbot_connected = false;
-            if (s_status_label != NULL && lvgl_port_lock(0)) {
+            if (s_status_label != NULL) {
                 lv_label_set_text(s_status_label, "● Disconnected");
                 lv_obj_set_style_text_color(s_status_label, lv_color_hex(0xff4444), 0);
-                lvgl_port_unlock();
             }
         }
         // Note: Other events are handled by orchestrator, we only handle UI-related ones here
     }
     
     // Update STT/TTS status from services
-    if (lvgl_port_lock(0)) {
-        // Update STT status
-        bool stt_is_active = sx_stt_is_active();
-        if (stt_is_active != s_stt_active && s_stt_status_label != NULL) {
-            s_stt_active = stt_is_active;
-            if (stt_is_active) {
-                lv_label_set_text(s_stt_status_label, "STT: Listening");
-                lv_obj_set_style_text_color(s_stt_status_label, lv_color_hex(0x5b7fff), 0);
-            } else {
-                lv_label_set_text(s_stt_status_label, "STT: Ready");
-                lv_obj_set_style_text_color(s_stt_status_label, lv_color_hex(0x888888), 0);
-            }
+    // Update STT status
+    bool stt_is_active = sx_stt_is_active();
+    if (stt_is_active != s_stt_active && s_stt_status_label != NULL) {
+        s_stt_active = stt_is_active;
+        if (stt_is_active) {
+            lv_label_set_text(s_stt_status_label, "STT: Listening");
+            lv_obj_set_style_text_color(s_stt_status_label, lv_color_hex(0x5b7fff), 0);
+        } else {
+            lv_label_set_text(s_stt_status_label, "STT: Ready");
+            lv_obj_set_style_text_color(s_stt_status_label, lv_color_hex(0x888888), 0);
         }
-        
-        // Update TTS status
-        bool tts_is_speaking = sx_tts_is_speaking();
-        if (tts_is_speaking != s_tts_speaking && s_tts_status_label != NULL) {
-            s_tts_speaking = tts_is_speaking;
-            if (tts_is_speaking) {
-                lv_label_set_text(s_tts_status_label, "TTS: Speaking");
-                lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x5b7fff), 0);
-            } else {
-                lv_label_set_text(s_tts_status_label, "TTS: Ready");
-                lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x888888), 0);
-            }
+    }
+    
+    // Update TTS status
+    bool tts_is_speaking = sx_tts_is_speaking();
+    if (tts_is_speaking != s_tts_speaking && s_tts_status_label != NULL) {
+        s_tts_speaking = tts_is_speaking;
+        if (tts_is_speaking) {
+            lv_label_set_text(s_tts_status_label, "TTS: Speaking");
+            lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x5b7fff), 0);
+        } else {
+            lv_label_set_text(s_tts_status_label, "TTS: Ready");
+            lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x888888), 0);
         }
-        lvgl_port_unlock();
     }
 }
 
@@ -408,40 +391,37 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_CHAT);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_message_list != NULL) {
-            lv_obj_del(s_message_list);
-            s_message_list = NULL;
-        }
-        if (s_input_bar != NULL) {
-            lv_obj_del(s_input_bar);
-            s_input_bar = NULL;
-        }
-        if (s_status_label != NULL) {
-            lv_obj_del(s_status_label);
-            s_status_label = NULL;
-        }
-        if (s_stt_status_label != NULL) {
-            lv_obj_del(s_stt_status_label);
-            s_stt_status_label = NULL;
-        }
-        if (s_tts_status_label != NULL) {
-            lv_obj_del(s_tts_status_label);
-            s_tts_status_label = NULL;
-        }
-        if (s_emotion_label != NULL) {
-            lv_obj_del(s_emotion_label);
-            s_emotion_label = NULL;
-        }
-        if (s_typing_indicator != NULL) {
-            lv_obj_del(s_typing_indicator);
-            s_typing_indicator = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_message_list != NULL) {
+        lv_obj_del(s_message_list);
+        s_message_list = NULL;
+    }
+    if (s_input_bar != NULL) {
+        lv_obj_del(s_input_bar);
+        s_input_bar = NULL;
+    }
+    if (s_status_label != NULL) {
+        lv_obj_del(s_status_label);
+        s_status_label = NULL;
+    }
+    if (s_stt_status_label != NULL) {
+        lv_obj_del(s_stt_status_label);
+        s_stt_status_label = NULL;
+    }
+    if (s_tts_status_label != NULL) {
+        lv_obj_del(s_tts_status_label);
+        s_tts_status_label = NULL;
+    }
+    if (s_emotion_label != NULL) {
+        lv_obj_del(s_emotion_label);
+        s_emotion_label = NULL;
+    }
+    if (s_typing_indicator != NULL) {
+        lv_obj_del(s_typing_indicator);
+        s_typing_indicator = NULL;
     }
     
     // Reset state
