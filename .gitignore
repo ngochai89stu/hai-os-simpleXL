@@ -1,5 +1,6 @@
 # ESP-IDF / CMake / Ninja
 build/
+managed_components/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
