@@ -31,11 +31,17 @@ typedef struct {
     uint8_t volume;
 } sx_audio_state_t;
 
+#define SX_UI_MESSAGE_MAX_LEN 256
+
 typedef struct {
     // UI renders these fields; UI never mutates them.
     sx_device_state_t device_state;
     const char *status_text;   // points to constant strings for now
     const char *emotion_id;    // points to constant strings for now
+
+    // Chat message buffers
+    char last_user_message[SX_UI_MESSAGE_MAX_LEN];
+    char last_assistant_message[SX_UI_MESSAGE_MAX_LEN];
 } sx_ui_state_t;
 
 typedef struct {

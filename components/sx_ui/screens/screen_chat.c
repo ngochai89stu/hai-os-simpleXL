@@ -285,33 +285,17 @@ static void on_update(const sx_state_t *state) {
     // Update UI based on state
     // For chat screen, we mainly listen to events for new messages
     // State updates can be used for status changes
-    if (state->ui.status_text != NULL && strlen(state->ui.status_text) > 0) {
-        // Could add status indicator if needed
+    if (strcmp(state->ui.status_text, "stt_result") == 0 && state->ui.last_user_message[0] != '\0') {
+        add_message_to_list("user", state->ui.last_user_message);
+    } else if (strcmp(state->ui.status_text, "tts_sentence") == 0 && state->ui.last_assistant_message[0] != '\0') {
+        add_message_to_list("assistant", state->ui.last_assistant_message);
     }
-    
+
     // Poll chatbot events and update UI
     sx_event_t evt;
     while (sx_dispatcher_poll_event(&evt)) {
         // Handle chatbot events
-        if (evt.type == SX_EVT_CHATBOT_STT) {
-            // User message from STT
-            const char *text = (const char *)evt.ptr;
-            if (text != NULL) {
-                ESP_LOGI(TAG, "Received STT: %s", text);
-                add_message_to_list("user", text);
-                // Free text copy (allocated by protocol layer)
-                free((void *)evt.ptr);
-            }
-        } else if (evt.type == SX_EVT_CHATBOT_TTS_SENTENCE) {
-            // Assistant message from TTS
-            const char *text = (const char *)evt.ptr;
-            if (text != NULL) {
-                ESP_LOGI(TAG, "Received TTS sentence: %s", text);
-                add_message_to_list("assistant", text);
-                // Free text copy (allocated by protocol layer)
-                free((void *)evt.ptr);
-            }
-        } else if (evt.type == SX_EVT_CHATBOT_TTS_START) {
+        if (evt.type == SX_EVT_CHATBOT_TTS_START) {
             // TTS started - show typing indicator
             ESP_LOGI(TAG, "TTS started");
             s_tts_speaking = true;

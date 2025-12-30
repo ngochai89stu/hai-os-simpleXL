@@ -148,6 +148,11 @@ static void sx_orchestrator_task(void *arg) {
                     st.seq++;
                     // Use a stable status_text to indicate new STT result
                     st.ui.status_text = "stt_result";
+                    // Copy the message to the state buffer
+                    strncpy(st.ui.last_user_message, text, SX_UI_MESSAGE_MAX_LEN - 1);
+                    st.ui.last_user_message[SX_UI_MESSAGE_MAX_LEN - 1] = '\0'; // Ensure null termination
+                    // Clear the other message buffer to avoid showing stale data
+                    st.ui.last_assistant_message[0] = '\0';
                     sx_dispatcher_set_state(&st);
                     // Free text copy (may be from pool or malloc)
                     sx_event_free_string((char *)evt.ptr);
@@ -161,6 +166,11 @@ static void sx_orchestrator_task(void *arg) {
                     st.seq++;
                     // Use a stable status_text to indicate new TTS sentence
                     st.ui.status_text = "tts_sentence";
+                    // Copy the message to the state buffer
+                    strncpy(st.ui.last_assistant_message, text, SX_UI_MESSAGE_MAX_LEN - 1);
+                    st.ui.last_assistant_message[SX_UI_MESSAGE_MAX_LEN - 1] = '\0'; // Ensure null termination
+                    // Clear the other message buffer
+                    st.ui.last_user_message[0] = '\0';
                     sx_dispatcher_set_state(&st);
                     // Free text copy (may be from pool or malloc)
                     sx_event_free_string((char *)evt.ptr);
