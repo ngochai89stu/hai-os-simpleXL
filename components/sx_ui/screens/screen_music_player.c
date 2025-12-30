@@ -264,17 +264,14 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_MUSIC_PLAYER);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        // Custom UI mode: clean up UI objects
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    // Custom UI mode: clean up UI objects
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 
