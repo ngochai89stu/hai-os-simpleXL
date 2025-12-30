@@ -89,15 +89,9 @@ static lv_obj_t* create_home_menu_item(lv_obj_t *parent, const home_menu_item_t 
 static void on_create(void) {
     ESP_LOGI(TAG, "Home screen onCreate (Launcher)");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -126,8 +120,6 @@ static void on_create(void) {
     // Add touch event handler to reset idle timer
     lv_obj_add_event_cb(container, home_touch_event_cb, LV_EVENT_ALL, NULL);
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_HOME, "Home", container, s_grid);
@@ -139,10 +131,8 @@ static void idle_timer_cb(lv_timer_t *timer) {
     ESP_LOGI(TAG, "Home screen idle timeout, returning to screensaver");
     
     // Navigate to flash screen (screensaver)
-    if (lvgl_port_lock(0)) {
-        ui_router_navigate_to(SCREEN_ID_FLASH);
-        lvgl_port_unlock();
-    }
+    // Note: ui_router_navigate_to() already handles locking internally
+    ui_router_navigate_to(SCREEN_ID_FLASH);
 }
 
 static void home_touch_event_cb(lv_event_t *e) {
@@ -199,16 +189,13 @@ static void on_destroy(void) {
         s_idle_timer = NULL;
     }
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_grid != NULL) {
-            lv_obj_del(s_grid);
-            s_grid = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_grid != NULL) {
+        lv_obj_del(s_grid);
+        s_grid = NULL;
     }
 }
 
