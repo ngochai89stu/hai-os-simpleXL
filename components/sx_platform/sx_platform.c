@@ -10,6 +10,15 @@
 #include "esp_lcd_st7796.h"
 #include "esp_lcd_touch_ft5x06.h"
 
+// Include LCD drivers based on Kconfig selection
+#if defined(CONFIG_LCD_ST7789_240X320) || defined(CONFIG_LCD_ST7789_240X240)
+#include "esp_lcd_panel_vendor.h"
+#endif
+
+#if defined(CONFIG_LCD_ILI9341_240X320)
+#include "esp_lcd_ili9341.h"
+#endif
+
 // GPIO mapping từ Kconfig
 #define LCD_HOST_ID         SPI3_HOST
 
@@ -153,13 +162,17 @@ sx_display_handles_t sx_platform_display_init(void) {
     }
     handles.io_handle = io_handle;
 
-    // Panel driver configuration (ST7796)
+    // Panel driver configuration - select based on Kconfig
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = LCD_PIN_NUM_RST,
-        .rgb_ele_order = ESP_LCD_COLOR_SPACE_BGR, // from reference
         .bits_per_pixel = 16,
     };
+    
+#if defined(CONFIG_LCD_ST7796_320X480)
+    // ST7796 configuration
+    ESP_LOGI(TAG, "Initializing ST7796 LCD (320x480)");
+    panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_BGR;
     
     st7796_vendor_config_t vendor_config = {
         .init_cmds = st7796u_init_cmds,
@@ -168,10 +181,58 @@ sx_display_handles_t sx_platform_display_init(void) {
     panel_config.vendor_config = &vendor_config;
 
     ret = esp_lcd_new_panel_st7796(io_handle, &panel_config, &panel_handle);
+    
+#elif defined(CONFIG_LCD_ST7789_240X320)
+    // ST7789 240x320 configuration
+    ESP_LOGI(TAG, "Initializing ST7789 LCD (240x320)");
+    panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_RGB;
+    
+    ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle);
+    
+#elif defined(CONFIG_LCD_ST7789_240X240)
+    // ST7789 240x240 configuration
+    ESP_LOGI(TAG, "Initializing ST7789 LCD (240x240)");
+    panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_RGB;
+    
+    ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle);
+    
+#elif defined(CONFIG_LCD_ILI9341_240X320)
+    // ILI9341 configuration
+    ESP_LOGI(TAG, "Initializing ILI9341 LCD (240x320)");
+    panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_BGR;
+    
+    ret = esp_lcd_new_panel_ili9341(io_handle, &panel_config, &panel_handle);
+    
+#elif defined(CONFIG_LCD_CUSTOM)
+    // Custom LCD - default to ST7796 for now
+    ESP_LOGI(TAG, "Initializing Custom LCD (%dx%d) - using ST7796 driver", LCD_H_RES, LCD_V_RES);
+    panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_BGR;
+    
+    st7796_vendor_config_t vendor_config = {
+        .init_cmds = st7796u_init_cmds,
+        .init_cmds_size = sizeof(st7796u_init_cmds) / sizeof(st7796_lcd_init_cmd_t),
+    };
+    panel_config.vendor_config = &vendor_config;
+
+    ret = esp_lcd_new_panel_st7796(io_handle, &panel_config, &panel_handle);
+    
+#else
+    // Default fallback to ST7796
+    ESP_LOGW(TAG, "No LCD type selected, defaulting to ST7796");
+    panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_BGR;
+    
+    st7796_vendor_config_t vendor_config = {
+        .init_cmds = st7796u_init_cmds,
+        .init_cmds_size = sizeof(st7796u_init_cmds) / sizeof(st7796_lcd_init_cmd_t),
+    };
+    panel_config.vendor_config = &vendor_config;
+
+    ret = esp_lcd_new_panel_st7796(io_handle, &panel_config, &panel_handle);
+#endif
+
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create panel: %s", esp_err_to_name(ret));
         // Cleanup: Delete panel IO handle if panel creation failed
-        // Note: Panel IO handle cleanup is available in ESP-IDF
         if (io_handle != NULL) {
             esp_lcd_panel_io_del(io_handle);
             handles.io_handle = NULL;
