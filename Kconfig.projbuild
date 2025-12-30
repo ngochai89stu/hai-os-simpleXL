@@ -1,0 +1,60 @@
+menu "hai-os-simplexl board config"
+
+    config HAI_AUDIO_I2S_PORT
+        int "Audio I2S port"
+        range 0 1
+        default 0
+        help
+            Chọn I2S port dùng cho audio (0 hoặc 1).
+
+    config HAI_AUDIO_SAMPLE_RATE
+        int "Audio sample rate (Hz)"
+        default 16000
+        help
+            Tần số lấy mẫu mặc định cho pipeline audio (EQ, I2S, STT).
+
+    config HAI_AUDIO_DMA_DESC_NUM
+        int "Audio I2S DMA descriptors"
+        default 6
+        help
+            Số lượng descriptor DMA cho I2S audio TX.
+
+    config HAI_AUDIO_DMA_FRAME_NUM
+        int "Audio I2S DMA frame size"
+        default 240
+        help
+            Số frame trong mỗi descriptor DMA cho I2S audio TX.
+
+    config HAI_AUDIO_PIN_MCLK
+        int "Audio MCLK pin"
+        default -1
+        help
+            Chân MCLK cho I2S audio. Đặt -1 nếu không sử dụng (I2S_GPIO_UNUSED).
+
+    config HAI_AUDIO_PIN_BCLK
+        int "Audio BCLK pin"
+        default 15
+        help
+            Chân BCLK cho PCM5102A.
+
+    config HAI_AUDIO_PIN_WS
+        int "Audio WS/LRCLK pin"
+        default 16
+        help
+            Chân WS/LRCLK cho PCM5102A.
+
+    config HAI_AUDIO_PIN_DOUT
+        int "Audio DOUT pin"
+        default 7
+        help
+            Chân DOUT (data out) từ ESP32-S3 sang PCM5102A.
+
+    config HAI_AUDIO_PIN_DIN
+        int "Audio DIN pin"
+        default 6
+        help
+            Chân DIN (data in) từ microphone về ESP32-S3.
+
+endmenu
+
+

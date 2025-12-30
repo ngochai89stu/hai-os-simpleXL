@@ -23,6 +23,7 @@
 #include "sx_codec_detector.h"
 #include "sx_codec_common.h"
 #include "sx_audio_power.h"
+#include "sx_audio_buffer_pool.h"
 #include "driver/i2s_std.h"
 #include <math.h>
 
@@ -60,21 +61,25 @@ static sx_audio_recording_callback_t s_recording_callback = NULL;
 // Feed-from-stream mutex
 static SemaphoreHandle_t s_feed_mutex = NULL;
 
-// TODO: move to Kconfig/board config
-#define SX_AUDIO_I2S_PORT       I2S_NUM_0
-#define SX_AUDIO_SAMPLE_RATE    16000
-#define SX_AUDIO_BITS           I2S_DATA_BIT_WIDTH_16BIT
-#define SX_AUDIO_DMA_DESC_NUM   6
-#define SX_AUDIO_DMA_FRAME_NUM  240
+// Reusable buffer cho đường feed PCM (tránh malloc/free mỗi lần gọi)
+static int16_t *s_feed_pcm_buffer = NULL;
+static size_t s_feed_pcm_capacity = 0;
 
-// Hardware pin mapping - Xác nhận với hardware thực tế
+// Cấu hình audio/I2S: đọc từ Kconfig (Kconfig.projbuild)
+#define SX_AUDIO_I2S_PORT       CONFIG_HAI_AUDIO_I2S_PORT
+#define SX_AUDIO_SAMPLE_RATE    CONFIG_HAI_AUDIO_SAMPLE_RATE
+#define SX_AUDIO_BITS           I2S_DATA_BIT_WIDTH_16BIT
+#define SX_AUDIO_DMA_DESC_NUM   CONFIG_HAI_AUDIO_DMA_DESC_NUM
+#define SX_AUDIO_DMA_FRAME_NUM  CONFIG_HAI_AUDIO_DMA_FRAME_NUM
+
+// Hardware pin mapping - cấu hình qua Kconfig, mặc định theo PCM5102A board hiện tại
 // PCM5102A Audio Output: GPIO 7 (DOUT), GPIO 15 (BCLK), GPIO 16 (WS)
 // Microphone Input: GPIO 4, 5, 6 (cần xác nhận chi tiết từng chân)
-#define SX_AUDIO_PIN_MCLK       I2S_GPIO_UNUSED  // PCM5102A không cần MCLK
-#define SX_AUDIO_PIN_BCLK       15  // PCM5102A Bit Clock
-#define SX_AUDIO_PIN_WS         16  // PCM5102A Word Select (LRCLK)
-#define SX_AUDIO_PIN_DOUT       7   // PCM5102A Data Output (Speaker/Headphone)
-#define SX_AUDIO_PIN_DIN        6   // Microphone Data Input (GPIO 4,5 có thể là control pins)
+#define SX_AUDIO_PIN_MCLK       ((CONFIG_HAI_AUDIO_PIN_MCLK < 0) ? I2S_GPIO_UNUSED : CONFIG_HAI_AUDIO_PIN_MCLK)
+#define SX_AUDIO_PIN_BCLK       CONFIG_HAI_AUDIO_PIN_BCLK
+#define SX_AUDIO_PIN_WS         CONFIG_HAI_AUDIO_PIN_WS
+#define SX_AUDIO_PIN_DOUT       CONFIG_HAI_AUDIO_PIN_DOUT
+#define SX_AUDIO_PIN_DIN        CONFIG_HAI_AUDIO_PIN_DIN
 
 // Audio service task
 static void sx_audio_task(void *arg);
@@ -607,30 +612,38 @@ esp_err_t sx_audio_service_feed_pcm(const int16_t *pcm, size_t sample_count, uin
         return ESP_ERR_TIMEOUT;
     }
 
-    // Apply EQ (in-place processing, so we need a copy)
-    int16_t *pcm_processed = (int16_t *)malloc(sample_count * sizeof(int16_t));
-    if (pcm_processed == NULL) {
-        if (s_feed_mutex) {
-            xSemaphoreGive(s_feed_mutex);
+    // Bảo đảm buffer dùng lại đủ lớn cho đợt feed hiện tại
+    if (sample_count > s_feed_pcm_capacity) {
+        size_t new_bytes = sample_count * sizeof(int16_t);
+        int16_t *new_buf = (int16_t *)sx_audio_buffer_alloc_heap(new_bytes, true);
+        if (new_buf == NULL) {
+            if (s_feed_mutex) {
+                xSemaphoreGive(s_feed_mutex);
+            }
+            return ESP_ERR_NO_MEM;
         }
-        return ESP_ERR_NO_MEM;
+        if (s_feed_pcm_buffer) {
+            sx_audio_buffer_free_heap(s_feed_pcm_buffer);
+        }
+        s_feed_pcm_buffer = new_buf;
+        s_feed_pcm_capacity = sample_count;
     }
-    memcpy(pcm_processed, pcm, sample_count * sizeof(int16_t));
-    sx_audio_eq_process(pcm_processed, sample_count);
+
+    // Copy sang buffer dùng lại rồi xử lý in-place
+    memcpy(s_feed_pcm_buffer, pcm, sample_count * sizeof(int16_t));
+    sx_audio_eq_process(s_feed_pcm_buffer, sample_count);
     
     // Apply crossfade if active
-    sx_audio_crossfade_process(pcm_processed, sample_count);
+    sx_audio_crossfade_process(s_feed_pcm_buffer, sample_count);
     
     // Apply volume with logarithmic scaling
     for (size_t i = 0; i < sample_count; i++) {
-        pcm_processed[i] = (int16_t)(pcm_processed[i] * s_current_volume_factor);
+        s_feed_pcm_buffer[i] = (int16_t)(s_feed_pcm_buffer[i] * s_current_volume_factor);
     }
 
     size_t bytes_to_write = sample_count * sizeof(int16_t);
     size_t written = 0;
-    esp_err_t ret = i2s_channel_write(s_tx_chan, pcm_processed, bytes_to_write, &written, 0);
-    
-    free(pcm_processed);
+    esp_err_t ret = i2s_channel_write(s_tx_chan, s_feed_pcm_buffer, bytes_to_write, &written, 0);
 
     if (s_feed_mutex) {
         xSemaphoreGive(s_feed_mutex);

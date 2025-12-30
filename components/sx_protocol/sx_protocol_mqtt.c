@@ -87,83 +87,19 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             ESP_LOGI(TAG, "MQTT data received, topic=%.*s, data_len=%d",
                      event->topic_len, event->topic, event->data_len);
             
-            // Parse JSON message if it's text
+            // Parse JSON message nếu là text
             if (event->data_len > 0 && event->data_len < 4096) {
                 char *payload = strndup((const char *)event->data, event->data_len);
                 if (payload) {
                     cJSON *root = cJSON_Parse(payload);
                     if (root != NULL) {
-                        cJSON *type = cJSON_GetObjectItem(root, "type");
-                        if (cJSON_IsString(type)) {
-                            const char *msg_type = type->valuestring;
-                            
-                            if (strcmp(msg_type, "stt") == 0) {
-                                cJSON *text = cJSON_GetObjectItem(root, "text");
-                                if (cJSON_IsString(text)) {
-                                    ESP_LOGI(TAG, "STT: %s", text->valuestring);
-                                    sx_event_t evt = {
-                                        .type = SX_EVT_CHATBOT_STT,
-                                        .arg0 = 0,
-                                        .ptr = sx_event_alloc_string(text->valuestring),
-                                    };
-                                    sx_dispatcher_post_event(&evt);
-                                }
-                            } else if (strcmp(msg_type, "tts") == 0) {
-                                cJSON *state = cJSON_GetObjectItem(root, "state");
-                                if (cJSON_IsString(state)) {
-                                    const char *tts_state = state->valuestring;
-                                    
-                                    if (strcmp(tts_state, "start") == 0) {
-                                        sx_event_t evt = {
-                                            .type = SX_EVT_CHATBOT_TTS_START,
-                                            .arg0 = 0,
-                                            .ptr = NULL,
-                                        };
-                                        sx_dispatcher_post_event(&evt);
-                                    } else if (strcmp(tts_state, "stop") == 0) {
-                                        sx_event_t evt = {
-                                            .type = SX_EVT_CHATBOT_TTS_STOP,
-                                            .arg0 = 0,
-                                            .ptr = NULL,
-                                        };
-                                        sx_dispatcher_post_event(&evt);
-                                    } else if (strcmp(tts_state, "sentence_start") == 0) {
-                                        cJSON *text = cJSON_GetObjectItem(root, "text");
-                                        if (cJSON_IsString(text)) {
-                                            ESP_LOGI(TAG, "TTS sentence: %s", text->valuestring);
-                                            sx_event_t evt = {
-                                                .type = SX_EVT_CHATBOT_TTS_SENTENCE,
-                                                .arg0 = 0,
-                                                .ptr = sx_event_alloc_string(text->valuestring),
-                                            };
-                                            sx_dispatcher_post_event(&evt);
-                                        }
-                                    }
-                                }
-                            } else if (strcmp(msg_type, "llm") == 0) {
-                                cJSON *emotion = cJSON_GetObjectItem(root, "emotion");
-                                if (cJSON_IsString(emotion)) {
-                                    ESP_LOGI(TAG, "LLM emotion: %s", emotion->valuestring);
-                                    sx_event_t evt = {
-                                        .type = SX_EVT_CHATBOT_EMOTION,
-                                        .arg0 = 0,
-                                        .ptr = sx_event_alloc_string(emotion->valuestring),
-                                    };
-                                    sx_dispatcher_post_event(&evt);
-                                }
-                            } else if (strcmp(msg_type, "mcp") == 0) {
-                                cJSON *payload_json = cJSON_GetObjectItem(root, "payload");
-                                if (payload_json != NULL) {
-                                    char *payload_str = cJSON_PrintUnformatted(payload_json);
-                                    if (payload_str) {
-                                        sx_chatbot_handle_mcp_message(payload_str);
-                                        free(payload_str);
-                                    }
-                                } else {
-                                    // Fallback: pass entire message
-                                    sx_chatbot_handle_mcp_message(payload);
-                                }
-                            } else if (strcmp(msg_type, "hello") == 0) {
+                        bool handled = sx_chatbot_handle_json_message(root, payload);
+
+                        if (!handled) {
+                            cJSON *type = cJSON_GetObjectItem(root, "type");
+                            const char *msg_type = cJSON_IsString(type) ? type->valuestring : NULL;
+
+                            if (msg_type && strcmp(msg_type, "hello") == 0) {
                                 // Parse server hello message for UDP audio channel
                                 cJSON *transport = cJSON_GetObjectItem(root, "transport");
                                 if (transport != NULL && cJSON_IsString(transport) &&
@@ -223,14 +159,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                                         }
                                     }
                                 }
-                            } else if (strcmp(msg_type, "goodbye") == 0) {
+                            } else if (msg_type && strcmp(msg_type, "goodbye") == 0) {
                                 // Close UDP audio channel
                                 sx_protocol_mqtt_udp_close();
                                 ESP_LOGI(TAG, "UDP audio channel closed (goodbye)");
+                            } else if (!msg_type) {
+                                // Không có type mà JSON parse được: chuyển sang MCP
+                                sx_chatbot_handle_mcp_message(payload);
                             }
-                        } else {
-                            // No type field - try MCP handler
-                            sx_chatbot_handle_mcp_message(payload);
                         }
                         cJSON_Delete(root);
                     } else {

@@ -320,6 +320,118 @@ esp_err_t sx_chatbot_set_protocol_mqtt_available(bool available) {
     return ESP_OK;
 }
 
+bool sx_chatbot_handle_json_message(cJSON *root, const char *raw_fallback) {
+    if (root == NULL) {
+        return false;
+    }
+
+    cJSON *type = cJSON_GetObjectItem(root, "type");
+    const char *msg_type = cJSON_IsString(type) ? type->valuestring : NULL;
+
+    // Không có type: coi như MCP raw
+    if (!msg_type) {
+        if (raw_fallback != NULL) {
+            sx_chatbot_handle_mcp_message(raw_fallback);
+        } else {
+            char *msg_str = cJSON_PrintUnformatted(root);
+            if (msg_str) {
+                sx_chatbot_handle_mcp_message(msg_str);
+                free(msg_str);
+            }
+        }
+        return true;
+    }
+
+    if (strcmp(msg_type, "stt") == 0) {
+        cJSON *text = cJSON_GetObjectItem(root, "text");
+        if (cJSON_IsString(text)) {
+            ESP_LOGI(TAG, "STT: %s", text->valuestring);
+            sx_event_t evt = {
+                .type = SX_EVT_CHATBOT_STT,
+                .arg0 = 0,
+                .ptr = sx_event_alloc_string(text->valuestring),
+            };
+            sx_dispatcher_post_event(&evt);
+        }
+        return true;
+    }
+
+    if (strcmp(msg_type, "tts") == 0) {
+        cJSON *state = cJSON_GetObjectItem(root, "state");
+        if (cJSON_IsString(state)) {
+            const char *tts_state = state->valuestring;
+
+            if (strcmp(tts_state, "start") == 0) {
+                sx_event_t evt = {
+                    .type = SX_EVT_CHATBOT_TTS_START,
+                    .arg0 = 0,
+                    .ptr = NULL,
+                };
+                sx_dispatcher_post_event(&evt);
+            } else if (strcmp(tts_state, "stop") == 0) {
+                sx_event_t evt = {
+                    .type = SX_EVT_CHATBOT_TTS_STOP,
+                    .arg0 = 0,
+                    .ptr = NULL,
+                };
+                sx_dispatcher_post_event(&evt);
+            } else if (strcmp(tts_state, "sentence_start") == 0) {
+                cJSON *text = cJSON_GetObjectItem(root, "text");
+                if (cJSON_IsString(text)) {
+                    ESP_LOGI(TAG, "TTS sentence: %s", text->valuestring);
+                    sx_event_t evt = {
+                        .type = SX_EVT_CHATBOT_TTS_SENTENCE,
+                        .arg0 = 0,
+                        .ptr = sx_event_alloc_string(text->valuestring),
+                    };
+                    sx_dispatcher_post_event(&evt);
+                }
+            }
+        }
+        return true;
+    }
+
+    if (strcmp(msg_type, "llm") == 0) {
+        cJSON *emotion = cJSON_GetObjectItem(root, "emotion");
+        if (cJSON_IsString(emotion)) {
+            ESP_LOGI(TAG, "LLM emotion: %s", emotion->valuestring);
+            sx_event_t evt = {
+                .type = SX_EVT_CHATBOT_EMOTION,
+                .arg0 = 0,
+                .ptr = sx_event_alloc_string(emotion->valuestring),
+            };
+            sx_dispatcher_post_event(&evt);
+        }
+        return true;
+    }
+
+    if (strcmp(msg_type, "mcp") == 0) {
+        cJSON *payload = cJSON_GetObjectItem(root, "payload");
+        if (payload != NULL) {
+            char *payload_str = cJSON_PrintUnformatted(payload);
+            if (payload_str) {
+                sx_chatbot_handle_mcp_message(payload_str);
+                free(payload_str);
+            }
+        } else {
+            // Fallback: pass entire message
+            if (raw_fallback != NULL) {
+                sx_chatbot_handle_mcp_message(raw_fallback);
+            } else {
+                char *msg_str = cJSON_PrintUnformatted(root);
+                if (msg_str) {
+                    sx_chatbot_handle_mcp_message(msg_str);
+                    free(msg_str);
+                }
+            }
+        }
+        return true;
+    }
+
+    // Các type khác (hello, goodbye, ...) sẽ do protocol layer xử lý
+    return false;
+}
+
 esp_err_t sx_chatbot_handle_mcp_message(const char *message) {
     if (!s_initialized || message == NULL) {
         return ESP_ERR_INVALID_STATE;

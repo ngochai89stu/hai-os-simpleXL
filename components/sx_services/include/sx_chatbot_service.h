@@ -14,9 +14,16 @@ typedef struct {
     const char *publish_topic; // optional MQTT publish topic
 } sx_chatbot_config_t;
 
+// Forward declare cJSON để tránh phụ thuộc mạnh vào cJSON.h trong header public
+typedef struct cJSON cJSON;
+
 // Handle incoming MCP message from protocol layer
 // This should be called when receiving MCP messages from WebSocket/MQTT
 esp_err_t sx_chatbot_handle_mcp_message(const char *message);
+
+// Xử lý JSON chatbot chung (stt/tts/llm/mcp/không có type) cho cả WS/MQTT
+// Trả về true nếu đã xử lý (đã post event hoặc chuyển tiếp MCP) để caller không xử lý lại.
+bool sx_chatbot_handle_json_message(cJSON *root, const char *raw_fallback);
 
 esp_err_t sx_chatbot_service_init(const sx_chatbot_config_t *cfg);
 esp_err_t sx_chatbot_service_start(void);
