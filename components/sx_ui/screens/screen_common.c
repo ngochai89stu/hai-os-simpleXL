@@ -22,11 +22,6 @@ static void back_btn_event_cb(lv_event_t *e) {
 }
 
 lv_obj_t* screen_common_create_top_bar(lv_obj_t *parent, const char *title) {
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return NULL;
-    }
-    
     lv_obj_t *top_bar = lv_obj_create(parent);
     lv_obj_set_size(top_bar, LV_PCT(100), 48);  // Slightly taller for better touch targets
     lv_obj_align(top_bar, LV_ALIGN_TOP_LEFT, 0, 0);
@@ -40,19 +35,12 @@ lv_obj_t* screen_common_create_top_bar(lv_obj_t *parent, const char *title) {
     lv_obj_set_style_text_color(title_label, lv_color_hex(0xFFFFFF), 0);
     lv_obj_align(title_label, LV_ALIGN_LEFT_MID, 15, 0);
     
-    lvgl_port_unlock();
     return top_bar;
 }
 
 lv_obj_t* screen_common_create_top_bar_with_back(lv_obj_t *parent, const char *title) {
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return NULL;
-    }
-    
     lv_obj_t *top_bar = screen_common_create_top_bar(parent, title);
     if (top_bar == NULL) {
-        lvgl_port_unlock();
         return NULL;
     }
     
@@ -79,7 +67,6 @@ lv_obj_t* screen_common_create_top_bar_with_back(lv_obj_t *parent, const char *t
         lv_obj_align(title_label, LV_ALIGN_LEFT_MID, 55, 0);
     }
     
-    lvgl_port_unlock();
     return top_bar;
 }
 
@@ -97,11 +84,6 @@ static void list_item_click_cb(lv_event_t *e) {
 }
 
 lv_obj_t* screen_common_create_list_item(lv_obj_t *parent, const char *title, ui_screen_id_t target_screen) {
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return NULL;
-    }
-    
     lv_obj_t *item = lv_obj_create(parent);
     lv_obj_set_size(item, LV_PCT(100), 56);  // Slightly taller for better touch target
     lv_obj_set_style_bg_color(item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
@@ -127,7 +109,6 @@ lv_obj_t* screen_common_create_list_item(lv_obj_t *parent, const char *title, ui
         lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -5, 0);
     }
     
-    lvgl_port_unlock();
     return item;
 }
 
@@ -146,11 +127,6 @@ static void touch_probe_event_cb(lv_event_t *e) {
 }
 
 lv_obj_t* screen_common_add_touch_probe(lv_obj_t *parent, const char *label, ui_screen_id_t screen_id) {
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return NULL;
-    }
-    
     // Create a touch probe button (full-width bar at bottom)
     lv_obj_t *probe = lv_btn_create(parent);
     lv_obj_set_size(probe, LV_PCT(100), 40);
@@ -170,7 +146,6 @@ lv_obj_t* screen_common_add_touch_probe(lv_obj_t *parent, const char *label, ui_
     lv_obj_set_style_text_color(probe_label_obj, lv_color_hex(0xFFFFFF), 0);
     lv_obj_center(probe_label_obj);
     
-    lvgl_port_unlock();
     return probe;
 }
 #endif // SX_UI_VERIFY_MODE

@@ -38,15 +38,9 @@ static lv_obj_t *s_container = NULL;
 static void on_create(void) {
     ESP_LOGI(TAG, "OTA Update screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -105,8 +99,6 @@ static void on_create(void) {
     lv_obj_set_style_text_font(update_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(update_label, lv_color_hex(0x000000), 0);
     lv_obj_center(update_label);
-    
-    lvgl_port_unlock();
     
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
@@ -214,11 +206,8 @@ static void on_show(void) {
     
     // Add event handlers
     if (s_check_btn != NULL && s_update_btn != NULL) {
-        if (lvgl_port_lock(0)) {
-            lv_obj_add_event_cb(s_check_btn, check_btn_cb, LV_EVENT_CLICKED, NULL);
-            lv_obj_add_event_cb(s_update_btn, update_btn_cb, LV_EVENT_CLICKED, NULL);
-            lvgl_port_unlock();
-        }
+        lv_obj_add_event_cb(s_check_btn, check_btn_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(s_update_btn, update_btn_cb, LV_EVENT_CLICKED, NULL);
     }
 }
 
@@ -229,16 +218,13 @@ static void on_hide(void) {
 static void on_destroy(void) {
     ESP_LOGI(TAG, "OTA Update screen onDestroy");
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 
@@ -247,24 +233,22 @@ static void on_update(const sx_state_t *state) {
     if (sx_ota_is_updating()) {
         // Update is in progress - progress callback will handle UI updates
         // But we can also check for completion here
-        if (s_status_label != NULL && lvgl_port_lock(0)) {
+        if (s_status_label != NULL) {
             // Check if update completed (progress should be 100%)
             int32_t progress = lv_bar_get_value(s_progress_bar);
             if (progress >= 100) {
                 lv_label_set_text(s_status_label, "Update complete. Rebooting...");
             }
-            lvgl_port_unlock();
         }
     } else {
         // Update not in progress - check for errors
         const char *error_msg = sx_ota_get_last_error();
         if (error_msg != NULL && strlen(error_msg) > 0) {
-            if (s_status_label != NULL && lvgl_port_lock(0)) {
+            if (s_status_label != NULL) {
                 char status[128];
                 snprintf(status, sizeof(status), "Error: %s", error_msg);
                 lv_label_set_text(s_status_label, status);
                 lv_obj_clear_flag(s_check_btn, LV_OBJ_FLAG_HIDDEN);
-                lvgl_port_unlock();
             }
         }
     }

@@ -38,15 +38,9 @@ static void show_password_dialog(const char *ssid);
 static void on_create(void) {
     ESP_LOGI(TAG, "Wi-Fi Setup screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -121,8 +115,6 @@ static void on_create(void) {
     
     // Initialize QR code service
     sx_qr_code_service_init();
-    
-    lvgl_port_unlock();
     
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
@@ -291,29 +283,26 @@ static void on_hide(void) {
 static void on_destroy(void) {
     ESP_LOGI(TAG, "Wi-Fi Setup screen onDestroy");
     
-    if (lvgl_port_lock(0)) {
-        // Close password dialog if open
-        if (s_password_dialog != NULL) {
-            lv_obj_del(s_password_dialog);
-            s_password_dialog = NULL;
-            s_password_ta = NULL;
-        }
-        
-        // Clean up QR code widget
-        if (s_qr_code_widget != NULL) {
-            lv_obj_del(s_qr_code_widget);
-            s_qr_code_widget = NULL;
-        }
-        
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    // Close password dialog if open
+    if (s_password_dialog != NULL) {
+        lv_obj_del(s_password_dialog);
+        s_password_dialog = NULL;
+        s_password_ta = NULL;
+    }
+    
+    // Clean up QR code widget
+    if (s_qr_code_widget != NULL) {
+        lv_obj_del(s_qr_code_widget);
+        s_qr_code_widget = NULL;
+    }
+    
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
     
     s_pending_ssid[0] = '\0';
@@ -516,10 +505,6 @@ static void show_password_dialog(const char *ssid) {
 }
 
 static void on_update(const sx_state_t *state) {
-    if (!lvgl_port_lock(0)) {
-        return;
-    }
-    
     // Update connection status if available
     if (state != NULL && s_status_label != NULL) {
         // Check WiFi state from state structure
@@ -535,8 +520,6 @@ static void on_update(const sx_state_t *state) {
             update_ip_qr_code();
         }
     }
-    
-    lvgl_port_unlock();
 }
 
 // Register this screen
