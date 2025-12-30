@@ -33,15 +33,9 @@ static void save_settings(void);
 static void on_create(void) {
     ESP_LOGI(TAG, "Voice Settings screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -116,8 +110,6 @@ static void on_create(void) {
     lv_slider_set_value(s_mic_gain_slider, 50, LV_ANIM_OFF);
     lv_slider_set_range(s_mic_gain_slider, 0, 100);
     lv_obj_add_event_cb(s_mic_gain_slider, mic_gain_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    
-    lvgl_port_unlock();
     
     // Load current settings
     load_settings();
@@ -269,16 +261,13 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_VOICE_SETTINGS);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 

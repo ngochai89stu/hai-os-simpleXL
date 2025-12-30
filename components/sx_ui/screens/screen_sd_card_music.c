@@ -35,15 +35,9 @@ static char s_current_path[256] = "/";
 static void on_create(void) {
     ESP_LOGI(TAG, "SD Card Music screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -88,8 +82,6 @@ static void on_create(void) {
     // Load files from SD card if mounted
     s_files_loaded = false;
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_SD_CARD_MUSIC, "SD Card Music", container, s_file_list);
@@ -112,10 +104,7 @@ static void on_show(void) {
     
     // Add refresh button handler
     if (s_refresh_btn != NULL) {
-        if (lvgl_port_lock(0)) {
-            lv_obj_add_event_cb(s_refresh_btn, refresh_btn_cb, LV_EVENT_CLICKED, NULL);
-            lvgl_port_unlock();
-        }
+        lv_obj_add_event_cb(s_refresh_btn, refresh_btn_cb, LV_EVENT_CLICKED, NULL);
     }
 }
 
@@ -321,28 +310,25 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_SD_CARD_MUSIC);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        // Free user data for all file items
-        if (s_file_list != NULL) {
-            uint32_t child_cnt = lv_obj_get_child_cnt(s_file_list);
-            for (uint32_t i = 0; i < child_cnt; i++) {
-                lv_obj_t *child = lv_obj_get_child(s_file_list, i);
-                void *user_data = lv_obj_get_user_data(child);
-                if (user_data != NULL && user_data != (void *)-1) {
-                    free(user_data);
-                }
+    // Free user data for all file items
+    if (s_file_list != NULL) {
+        uint32_t child_cnt = lv_obj_get_child_cnt(s_file_list);
+        for (uint32_t i = 0; i < child_cnt; i++) {
+            lv_obj_t *child = lv_obj_get_child(s_file_list, i);
+            void *user_data = lv_obj_get_user_data(child);
+            if (user_data != NULL && user_data != (void *)-1) {
+                free(user_data);
             }
         }
-        
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    }
+    
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
     
     s_files_loaded = false;
