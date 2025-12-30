@@ -30,15 +30,9 @@ static void pulse_anim_cb(void *var, int32_t value) {
 static void on_create(void) {
     ESP_LOGI(TAG, "Wakeword Feedback screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -78,8 +72,6 @@ static void on_create(void) {
     lv_label_set_text(s_status_label, "Listening...");
     lv_obj_set_style_text_font(s_status_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_status_label, lv_color_hex(0xFFFFFF), 0);
-    
-    lvgl_port_unlock();
     
     // Register wake word callback
     // Note: This screen should be shown when wake word detection is active
@@ -194,12 +186,9 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_WAKEWORD_FEEDBACK);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 

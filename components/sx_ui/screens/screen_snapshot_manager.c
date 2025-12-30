@@ -56,15 +56,9 @@ static void generate_snapshot_filename(char *filename, size_t max_len);
 static void on_create(void) {
     ESP_LOGI(TAG, "Snapshot Manager screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -129,14 +123,9 @@ static void on_create(void) {
     lv_obj_add_event_cb(s_save_btn, save_btn_cb, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(s_load_btn, load_btn_cb, LV_EVENT_CLICKED, NULL);
     
-    lvgl_port_unlock();
-    
     // Scan and refresh snapshot list
     scan_snapshot_files();
-    if (lvgl_port_lock(0)) {
-        refresh_snapshot_list();
-        lvgl_port_unlock();
-    }
+    refresh_snapshot_list();
     
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
@@ -152,10 +141,7 @@ static void on_show(void) {
     
     // Refresh snapshot list when showing
     scan_snapshot_files();
-    if (lvgl_port_lock(0)) {
-        refresh_snapshot_list();
-        lvgl_port_unlock();
-    }
+    refresh_snapshot_list();
 }
 
 static void on_hide(void) {
@@ -171,16 +157,13 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_SNAPSHOT_MANAGER);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 
