@@ -1,0 +1,70 @@
+# Doxygen configuration for hai-os-simplexl
+
+PROJECT_NAME           = "hai-os-simplexl"
+PROJECT_NUMBER         = "1.0"
+PROJECT_BRIEF          = "ESP32-S3 firmware for AI assistant device"
+
+OUTPUT_DIRECTORY       = docs/doxygen
+INPUT                  = components \
+                         include \
+                         app
+FILE_PATTERNS          = *.c *.h *.cpp *.hpp
+RECURSIVE              = YES
+
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+EXTRACT_LOCAL_METHODS  = YES
+
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = NO
+
+HTML_OUTPUT            = html
+HTML_EXTRA_STYLESHEET  = 
+HTML_EXTRA_FILES       = 
+
+USE_MDFILE_AS_MAINPAGE = README.md
+
+# Language
+OPTIMIZE_OUTPUT_FOR_C  = YES
+
+# Markdown support
+MARKDOWN_SUPPORT       = YES
+
+# Source browsing
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+STRIP_CODE_COMMENTS    = NO
+
+# Cross-references
+REFERENCED_BY_RELATION  = YES
+REFERENCES_RELATION     = YES
+
+# Preprocessor
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = NO
+PREDEFINED             = 
+
+# Exclude patterns
+EXCLUDE_PATTERNS       = */build/* \
+                         */managed_components/* \
+                         */test/*
+
+# Tag files (for external references)
+TAGFILES               = 
+
+# Verbosity
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+
+# Output formats
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+
+# Search
+SEARCHENGINE           = YES
+

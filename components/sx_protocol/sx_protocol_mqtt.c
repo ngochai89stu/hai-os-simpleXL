@@ -88,9 +88,16 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
                      event->topic_len, event->topic, event->data_len);
             
             // Parse JSON message nếu là text
-            if (event->data_len > 0 && event->data_len < 4096) {
-                char *payload = strndup((const char *)event->data, event->data_len);
+            // Security: Limit payload size to prevent DoS
+            #define MAX_MQTT_PAYLOAD_SIZE 8192
+            #define MAX_JSON_SIZE 4096
+            if (event->data_len > 0 && event->data_len < MAX_MQTT_PAYLOAD_SIZE) {
+                size_t payload_size = (event->data_len > MAX_JSON_SIZE) ? MAX_JSON_SIZE : event->data_len;
+                char *payload = strndup((const char *)event->data, payload_size);
                 if (payload) {
+                    // Ensure null termination
+                    payload[payload_size] = '\0';
+                    
                     cJSON *root = cJSON_Parse(payload);
                     if (root != NULL) {
                         bool handled = sx_chatbot_handle_json_message(root, payload);

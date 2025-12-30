@@ -52,8 +52,19 @@ static void websocket_event_handler(void *handler_args, esp_event_base_t base, i
             break;
         case WEBSOCKET_EVENT_DATA:
             if (data->op_code == 0x1) { // text frame
-                char *payload = strndup((const char *)data->data_ptr, data->data_len);
+                // Security: Limit payload size to prevent DoS
+                #define MAX_WS_PAYLOAD_SIZE 8192
+                size_t payload_size = (data->data_len > MAX_WS_PAYLOAD_SIZE) ? MAX_WS_PAYLOAD_SIZE : data->data_len;
+                
+                char *payload = strndup((const char *)data->data_ptr, payload_size);
                 if (payload) {
+                    // Security: Limit JSON size to prevent heap exhaustion
+                    #define MAX_JSON_SIZE 4096
+                    if (payload_size > MAX_JSON_SIZE) {
+                        ESP_LOGW(TAG, "JSON payload too large: %zu bytes, truncating to %d", payload_size, MAX_JSON_SIZE);
+                        payload[MAX_JSON_SIZE] = '\0';  // Truncate
+                    }
+                    
                     // Parse JSON message
                     cJSON *root = cJSON_Parse(payload);
                     if (root != NULL) {

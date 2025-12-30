@@ -77,7 +77,8 @@ esp_err_t sx_playlist_create(const char **track_paths, size_t track_count, sx_pl
                 free(playlist);
                 return ESP_ERR_NO_MEM;
             }
-            strcpy(playlist->track_paths[i], track_paths[i]);
+            strncpy(playlist->track_paths[i], track_paths[i], sizeof(playlist->track_paths[i]) - 1);
+            playlist->track_paths[i][sizeof(playlist->track_paths[i]) - 1] = '\0';
         } else {
             playlist->track_paths[i] = NULL;
         }
@@ -407,7 +408,8 @@ esp_err_t sx_playlist_preload_next(void) {
         size_t path_len = strlen(s_current_playlist->track_paths[next_index]) + 1;
         s_preloaded_track_path = (char *)malloc(path_len);
         if (s_preloaded_track_path != NULL) {
-            strcpy(s_preloaded_track_path, s_current_playlist->track_paths[next_index]);
+            strncpy(s_preloaded_track_path, s_current_playlist->track_paths[next_index], sizeof(s_preloaded_track_path) - 1);
+            s_preloaded_track_path[sizeof(s_preloaded_track_path) - 1] = '\0';
             s_preloaded_index = next_index;
             s_next_preloaded = true;
             ESP_LOGI(TAG, "Preloaded next track: %s (index %zu)", s_preloaded_track_path, next_index);

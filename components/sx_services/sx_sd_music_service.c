@@ -437,9 +437,12 @@ esp_err_t sx_sd_music_create_genre_playlist(const char *genre, sx_sd_playlist_t 
     }
     
     for (size_t i = 0; i < count; i++) {
-        playlist->track_paths[i] = (char *)malloc(strlen(entries[i].path) + 1);
+        size_t path_len = strlen(entries[i].path) + 1;
+        playlist->track_paths[i] = (char *)malloc(path_len);
         if (playlist->track_paths[i]) {
-            strcpy(playlist->track_paths[i], entries[i].path);
+            // Security: Use strncpy with explicit size (already malloc'd exact size, so safe)
+            strncpy(playlist->track_paths[i], entries[i].path, path_len - 1);
+            playlist->track_paths[i][path_len - 1] = '\0';  // Ensure null termination
         }
     }
     
