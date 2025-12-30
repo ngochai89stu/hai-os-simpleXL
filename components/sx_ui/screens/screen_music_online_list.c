@@ -42,9 +42,8 @@ static void search_btn_cb(lv_event_t *e) {
         ESP_LOGI(TAG, "Search button clicked: %s", search_text);
         
         // Update status
-        if (s_status_label != NULL && lvgl_port_lock(0)) {
+        if (s_status_label != NULL) {
             lv_label_set_text(s_status_label, "Playing...");
-            lvgl_port_unlock();
         }
         
         // Play song using music online service
@@ -58,9 +57,8 @@ static void search_btn_cb(lv_event_t *e) {
             update_track_info();
         } else {
             ESP_LOGE(TAG, "Failed to play song: %s", esp_err_to_name(ret));
-            if (s_status_label != NULL && lvgl_port_lock(0)) {
+            if (s_status_label != NULL) {
                 lv_label_set_text(s_status_label, "Play failed");
-                lvgl_port_unlock();
             }
         }
     }
@@ -69,15 +67,9 @@ static void search_btn_cb(lv_event_t *e) {
 static void on_create(void) {
     ESP_LOGI(TAG, "Online Music screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -146,8 +138,6 @@ static void on_create(void) {
     // Add search button event handler
     lv_obj_add_event_cb(s_search_btn, search_btn_cb, LV_EVENT_CLICKED, NULL);
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_MUSIC_ONLINE_LIST, "Music Online List", container, s_track_list);
@@ -158,10 +148,6 @@ static void on_create(void) {
 static void update_track_info(void);
 
 static void update_track_info(void) {
-    if (!lvgl_port_lock(0)) {
-        return;
-    }
-    
     // Clear existing track list
     if (s_track_list != NULL) {
         lv_obj_clean(s_track_list);
@@ -215,8 +201,6 @@ static void update_track_info(void) {
             lv_label_set_text(s_status_label, "Enter song name and click Play");
         }
     }
-    
-    lvgl_port_unlock();
 }
 
 static void on_show(void) {
@@ -242,16 +226,13 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_MUSIC_ONLINE_LIST);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 
