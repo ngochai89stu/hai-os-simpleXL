@@ -48,9 +48,6 @@ static void load_background_image(void);
 static void touch_event_cb(lv_event_t *e);
 
 static void update_clock(void) {
-    if (!lvgl_port_lock(0)) {
-        return;
-    }
     
     // Get current time
     time_t now;
@@ -77,15 +74,9 @@ static void update_clock(void) {
     if (s_date_label != NULL) {
         lv_label_set_text(s_date_label, date_str);
     }
-    
-    lvgl_port_unlock();
 }
 
 static void update_weather(void) {
-    if (!lvgl_port_lock(0)) {
-        return;
-    }
-    
     const sx_weather_info_t *weather = sx_weather_get_info();
     if (weather != NULL && weather->valid) {
         if (s_weather_city_label != NULL && weather->city[0] != '\0') {
@@ -111,15 +102,9 @@ static void update_weather(void) {
             lv_label_set_text(s_weather_desc_label, "");
         }
     }
-    
-    lvgl_port_unlock();
 }
 
 static void load_background_image(void) {
-    if (!lvgl_port_lock(0)) {
-        return;
-    }
-    
     // Get background image setting
     char bg_setting[64] = {0};
     sx_settings_get_string_default("screensaver_bg_image", bg_setting, sizeof(bg_setting), "Embedded");
@@ -149,8 +134,6 @@ static void load_background_image(void) {
                 // Set image source
                 lv_img_set_src(s_background_img, flashscreen_img);
                 ESP_LOGI(TAG, "Embedded flashscreen image displayed successfully");
-                
-                lvgl_port_unlock();
                 return;
             } else {
                 ESP_LOGW(TAG, "Embedded flashscreen image not available or placeholder, falling back to gradient");
@@ -270,8 +253,6 @@ static void load_background_image(void) {
             }
         }
     }
-    
-    lvgl_port_unlock();
 }
 
 static void touch_event_cb(lv_event_t *e) {
@@ -297,10 +278,7 @@ static void touch_event_cb(lv_event_t *e) {
                 ESP_LOGI(TAG, "Swipe detected: dx=%d (threshold=%d)", dx, SWIPE_THRESHOLD);
                 
                 // Navigate to home screen on any horizontal swipe
-                if (lvgl_port_lock(0)) {
-                    ui_router_navigate_to(SCREEN_ID_HOME);
-                    lvgl_port_unlock();
-                }
+                ui_router_navigate_to(SCREEN_ID_HOME);
             }
         }
     }
@@ -314,15 +292,9 @@ static void clock_timer_cb(lv_timer_t *timer) {
 static void on_create(void) {
     ESP_LOGI(TAG, "Flash screen (Screensaver) onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -394,8 +366,6 @@ static void on_create(void) {
     update_clock();
     update_weather();
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_FLASH, "Flash (Screensaver)", container, s_clock_label);
@@ -447,27 +417,24 @@ static void on_destroy(void) {
         s_clock_timer = NULL;
     }
     
-    if (lvgl_port_lock(0)) {
-        if (s_clock_label != NULL) {
-            lv_obj_del(s_clock_label);
-            s_clock_label = NULL;
-        }
-        if (s_date_label != NULL) {
-            lv_obj_del(s_date_label);
-            s_date_label = NULL;
-        }
-        if (s_weather_widget != NULL) {
-            lv_obj_del(s_weather_widget);
-            s_weather_widget = NULL;
-            s_weather_city_label = NULL;
-            s_weather_temp_label = NULL;
-            s_weather_desc_label = NULL;
-        }
-        if (s_background_img != NULL) {
-            lv_obj_del(s_background_img);
-            s_background_img = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_clock_label != NULL) {
+        lv_obj_del(s_clock_label);
+        s_clock_label = NULL;
+    }
+    if (s_date_label != NULL) {
+        lv_obj_del(s_date_label);
+        s_date_label = NULL;
+    }
+    if (s_weather_widget != NULL) {
+        lv_obj_del(s_weather_widget);
+        s_weather_widget = NULL;
+        s_weather_city_label = NULL;
+        s_weather_temp_label = NULL;
+        s_weather_desc_label = NULL;
+    }
+    if (s_background_img != NULL) {
+        lv_obj_del(s_background_img);
+        s_background_img = NULL;
     }
 }
 

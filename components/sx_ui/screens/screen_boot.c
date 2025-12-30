@@ -20,15 +20,9 @@ static lv_timer_t *s_boot_timer = NULL;
 static void on_create(void) {
     ESP_LOGI(TAG, "Boot screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -40,7 +34,6 @@ static void on_create(void) {
         ESP_LOGE(TAG, "Bootscreen image not available");
         // Fallback: black background
         lv_obj_set_style_bg_color(container, lv_color_hex(0x000000), LV_PART_MAIN);
-        lvgl_port_unlock();
         return;
     }
     
@@ -62,7 +55,6 @@ static void on_create(void) {
     s_bootscreen_img = lv_img_create(container);
     if (s_bootscreen_img == NULL) {
         ESP_LOGE(TAG, "Failed to create image object");
-        lvgl_port_unlock();
         return;
     }
     
@@ -92,8 +84,6 @@ static void on_create(void) {
     ESP_LOGI(TAG, "[BOOT] bootscreen image applied: 320x480 BGR565, img_obj=%p, container=%p", 
              s_bootscreen_img, container);
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_BOOT, "Boot", container, s_bootscreen_img);
@@ -104,10 +94,7 @@ static void boot_timer_cb(lv_timer_t *timer) {
     (void)timer;
     ESP_LOGE(TAG, "[TRACE] boot_timer_cb() FIRED - timer=%p navigating to FLASH", (void*)timer);
     // Navigate to flash screen after bootscreen display time
-    if (lvgl_port_lock(0)) {
-        ui_router_navigate_to(SCREEN_ID_FLASH);
-        lvgl_port_unlock();
-    }
+    ui_router_navigate_to(SCREEN_ID_FLASH);
     // Timer will be deleted in on_hide
 }
 
@@ -156,12 +143,9 @@ static void on_destroy(void) {
         s_boot_timer = NULL;
     }
     
-    if (lvgl_port_lock(0)) {
-        if (s_bootscreen_img != NULL) {
-            lv_obj_del(s_bootscreen_img);
-            s_bootscreen_img = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_bootscreen_img != NULL) {
+        lv_obj_del(s_bootscreen_img);
+        s_bootscreen_img = NULL;
     }
 }
 
