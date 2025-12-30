@@ -154,3 +154,10 @@ ESP_LOGI(TAG, "Checking I2C bus conflict...");
 **Giải pháp:** Thêm log chi tiết hơn và kiểm tra macro/I2C bus conflict.
 
 
+
+
+
+
+
+
+

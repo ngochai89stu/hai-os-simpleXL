@@ -2,10 +2,13 @@
 #include "sx_event_string_pool.h"
 
 #include <string.h>
+#include <esp_log.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
+
+static const char *TAG = "sx_dispatcher";
 
 // Multi-producer event queue (services + UI), single-consumer (orchestrator).
 static QueueHandle_t s_evt_q;
@@ -14,6 +17,11 @@ static QueueHandle_t s_evt_q;
 static sx_state_t s_state;
 static StaticSemaphore_t s_state_mutex_buf;
 static SemaphoreHandle_t s_state_mutex;
+
+// Drop event metrics (rate-limited logging)
+static uint32_t s_drop_count = 0;
+static TickType_t s_last_drop_log_time = 0;
+static const TickType_t s_drop_log_interval = pdMS_TO_TICKS(5000); // Log every 5 seconds max
 
 bool sx_dispatcher_init(void) {
     // Initialize event string pool for memory optimization
@@ -39,7 +47,26 @@ bool sx_dispatcher_post_event(const sx_event_t *evt) {
     if (!evt || s_evt_q == NULL) {
         return false;
     }
-    return xQueueSend(s_evt_q, evt, 0) == pdTRUE;
+    
+    // Try to send with no timeout (non-blocking)
+    // This matches the original behavior but we now track drops
+    if (xQueueSend(s_evt_q, evt, 0) == pdTRUE) {
+        return true;
+    }
+    
+    // Queue full - event dropped
+    s_drop_count++;
+    
+    // Rate-limited logging (max once per 5 seconds)
+    TickType_t now = xTaskGetTickCount();
+    if (now - s_last_drop_log_time >= s_drop_log_interval) {
+        ESP_LOGW(TAG, "Event queue full - dropped %lu events (event type: %d)", 
+                 (unsigned long)s_drop_count, (int)evt->type);
+        s_drop_count = 0;
+        s_last_drop_log_time = now;
+    }
+    
+    return false;
 }
 
 bool sx_dispatcher_poll_event(sx_event_t *out_evt) {

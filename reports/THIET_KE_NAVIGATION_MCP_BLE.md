@@ -511,3 +511,10 @@ Phương án này kết hợp sức mạnh của AI chatbot với BLE communicat
 
 
 
+
+
+
+
+
+
+

@@ -132,12 +132,6 @@ static void sx_orchestrator_task(void *arg) {
                 }
             }
             
-            // Phase 5: Handle chatbot audio channel opened (MQTT UDP)
-            if (evt.type == SX_EVT_CHATBOT_AUDIO_CHANNEL_OPENED) {
-                ESP_LOGI(TAG, "Audio channel opened, enabling audio receiving");
-                sx_audio_protocol_bridge_enable_receive(true);
-            }
-            
             // Phase 5: Handle chatbot events
             if (evt.type == SX_EVT_CHATBOT_STT) {
                 const char *text = (const char *)evt.ptr;
@@ -200,7 +194,8 @@ static void sx_orchestrator_task(void *arg) {
                 st.seq++;
                 sx_dispatcher_set_state(&st);
             } else if (evt.type == SX_EVT_CHATBOT_AUDIO_CHANNEL_OPENED) {
-                ESP_LOGI(TAG, "Audio channel opened (MQTT UDP), enabling audio receiving");
+                // Handle audio channel opened (MQTT UDP or WebSocket)
+                ESP_LOGI(TAG, "Audio channel opened, enabling audio receiving");
                 sx_audio_protocol_bridge_enable_receive(true);
             } else if (evt.type == SX_EVT_CHATBOT_CONNECTED) {
                 ESP_LOGI(TAG, "Chatbot connected");

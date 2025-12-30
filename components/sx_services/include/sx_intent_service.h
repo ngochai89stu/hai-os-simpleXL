@@ -58,3 +58,10 @@ esp_err_t sx_intent_execute(const char *text);
 
 
 
+
+
+
+
+
+
+

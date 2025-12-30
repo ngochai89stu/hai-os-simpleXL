@@ -46,3 +46,10 @@ Write-Host "Build and flash completed successfully!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 
 
+
+
+
+
+
+
+

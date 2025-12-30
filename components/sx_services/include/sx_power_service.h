@@ -61,3 +61,10 @@ esp_err_t sx_power_enter_deep_sleep(uint32_t sleep_time_ms);
 
 
 
+
+
+
+
+
+
+

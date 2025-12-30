@@ -52,3 +52,10 @@ I (17966) sx_audio_power: Entering power save mode (idle for 15995 ms)
 Touch initialization đã hoàn toàn thành công và touch input đang hoạt động bình thường. Swipe gestures được phát hiện chính xác trên flash screen.
 
 
+
+
+
+
+
+
+

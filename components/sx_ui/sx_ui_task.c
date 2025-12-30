@@ -254,7 +254,7 @@ static void sx_ui_task(void *arg) {
                 if (callbacks && callbacks->on_update) {
                     // Ensure screen updates are performed under LVGL lock.
                     if (lvgl_port_lock(0)) {
-                        callbacks->on_update(&state);
+                    callbacks->on_update(&state);
                         lvgl_port_unlock();
                     }
                 }

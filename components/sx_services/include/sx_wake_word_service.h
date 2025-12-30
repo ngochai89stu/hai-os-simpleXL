@@ -51,3 +51,10 @@ esp_err_t sx_wake_word_feed_audio(const int16_t *pcm, size_t sample_count);
 
 
 
+
+
+
+
+
+
+

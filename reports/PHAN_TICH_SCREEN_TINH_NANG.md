@@ -761,3 +761,10 @@ esp_err_t sx_ui_set_active_display(uint8_t display_id);
 
 
 
+
+
+
+
+
+
+

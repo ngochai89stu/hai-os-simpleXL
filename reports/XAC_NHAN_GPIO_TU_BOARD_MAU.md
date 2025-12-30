@@ -130,3 +130,10 @@ Board mẫu sử dụng **I2S Simplex Mode** - microphone có I2S bus riêng:
 
 
 
+
+
+
+
+
+
+

@@ -100,3 +100,10 @@ esp_err_t sx_bootstrap_start(void) {
 **Khả năng:** Touch init có thể đang hoạt động nhưng log bị cắt, hoặc bị crash sớm mà không hiển thị trong log.
 
 
+
+
+
+
+
+
+

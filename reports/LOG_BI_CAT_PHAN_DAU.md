@@ -142,3 +142,10 @@ idf.py menuconfig
 **Hãy flash firmware mới và mở serial monitor TRƯỚC khi reset board để xem toàn bộ log.**
 
 
+
+
+
+
+
+
+

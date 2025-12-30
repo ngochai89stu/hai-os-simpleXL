@@ -272,3 +272,10 @@ sx_ui_start();
 **Theo kiến trúc SimpleXL:** Core services (dispatcher, orchestrator, settings) là **REQUIRED** và không nên bị tắt, chỉ các tính năng optional (audio, wifi, etc.) mới có thể lazy-load hoặc disable.
 
 
+
+
+
+
+
+
+

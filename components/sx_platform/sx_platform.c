@@ -122,6 +122,10 @@ sx_display_handles_t sx_platform_display_init(void) {
     esp_err_t ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST_ID, &io_config, &io_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create panel IO: %s", esp_err_to_name(ret));
+        // Note: SPI bus was initialized but panel IO creation failed
+        // SPI bus resources will remain allocated (ESP-IDF limitation)
+        // This is acceptable as init failures are rare and system will reboot
+        s_backlight_initialized = false; // Reset backlight state on failure
         return handles; // Return empty handles on error
     }
     handles.io_handle = io_handle;
@@ -143,7 +147,14 @@ sx_display_handles_t sx_platform_display_init(void) {
     ret = esp_lcd_new_panel_st7796(io_handle, &panel_config, &panel_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create panel: %s", esp_err_to_name(ret));
-        return handles; // Return handles with io_handle but no panel_handle
+        // Cleanup: Delete panel IO handle if panel creation failed
+        // Note: Panel IO handle cleanup is available in ESP-IDF
+        if (io_handle != NULL) {
+            esp_lcd_panel_io_del(io_handle);
+            handles.io_handle = NULL;
+        }
+        s_backlight_initialized = false; // Reset backlight state on failure
+        return handles; // Return handles with io_handle cleaned up
     }
     handles.panel_handle = panel_handle;
 

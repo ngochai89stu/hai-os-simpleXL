@@ -15,7 +15,7 @@ extern "C" {
  */
 
 // Pool configuration
-#define SX_EVENT_STRING_POOL_SIZE 8
+#define SX_EVENT_STRING_POOL_SIZE 16
 #define SX_EVENT_STRING_MAX_LEN 128
 
 /**
@@ -51,6 +51,13 @@ void sx_event_string_pool_stats(size_t *used_count, size_t *total_count);
 #ifdef __cplusplus
 }
 #endif
+
+
+
+
+
+
+
 
 
 

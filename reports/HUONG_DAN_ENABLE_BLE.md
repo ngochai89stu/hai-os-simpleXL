@@ -101,3 +101,10 @@ I (xxx) sx_nav_ble: BLE advertising started
 
 
 
+
+
+
+
+
+
+

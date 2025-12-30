@@ -432,3 +432,10 @@ static void sx_wake_word_task(void *arg) {
 
 
 
+
+
+
+
+
+
+

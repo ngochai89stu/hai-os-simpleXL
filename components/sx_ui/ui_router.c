@@ -90,7 +90,7 @@ void ui_router_navigate_to(ui_screen_id_t screen_id) {
         if (s_screen_container != NULL) {
             lv_obj_clean(s_screen_container);
         }
-
+        
         // Destroy old screen while still holding LVGL lock (callbacks often touch LVGL)
         if (s_current_screen != SCREEN_ID_MAX) {
             const ui_screen_callbacks_t *old_callbacks = ui_screen_registry_get(s_current_screen);
@@ -98,15 +98,15 @@ void ui_router_navigate_to(ui_screen_id_t screen_id) {
                 old_callbacks->on_destroy();
             }
         }
-
+        
         // Create new screen while holding LVGL lock
         if (callbacks->on_create) {
             callbacks->on_create();
         }
-
+        
         // Update current screen BEFORE calling on_show
         s_current_screen = screen_id;
-
+        
         // Show new screen (only once, after create)
         if (callbacks->on_show) {
             // TRACE: Log caller address to identify who calls onShow
@@ -115,8 +115,8 @@ void ui_router_navigate_to(ui_screen_id_t screen_id) {
                      ui_screen_registry_get_name(screen_id), screen_id, caller_addr, (void*)ui_router_navigate_to);
             callbacks->on_show();
         }
-
-        ESP_LOGI(TAG, "Navigated to screen: %s (id: %d)",
+        
+        ESP_LOGI(TAG, "Navigated to screen: %s (id: %d)", 
                  ui_screen_registry_get_name(screen_id), screen_id);
 
         lvgl_port_unlock();

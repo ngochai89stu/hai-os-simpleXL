@@ -67,3 +67,7 @@
   - Tăng `#define SX_EVENT_STRING_POOL_SIZE` từ 8 lên 32 (hoặc 64) để giảm fallback malloc.
 
 
+
+
+
+

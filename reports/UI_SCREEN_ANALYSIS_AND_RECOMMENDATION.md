@@ -200,3 +200,10 @@ Cần update `ui_screen_registry.h` để thêm:
 
 
 
+
+
+
+
+
+
+

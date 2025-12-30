@@ -62,3 +62,10 @@ esp_err_t ui_anim_screen_transition(lv_obj_t *old_screen, lv_obj_t *new_screen, 
 
 
 
+
+
+
+
+
+
+

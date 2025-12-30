@@ -169,3 +169,10 @@ esp_lcd_panel_io_i2c_config_t io_config = {
 **Lưu ý:** Cũng cần sửa `disable_control_phase = 1` để match với repo mẫu.
 
 
+
+
+
+
+
+
+

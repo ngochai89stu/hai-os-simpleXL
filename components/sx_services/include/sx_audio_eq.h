@@ -86,3 +86,10 @@ esp_err_t sx_audio_eq_set_sample_rate(uint32_t sample_rate_hz);
 
 
 
+
+
+
+
+
+
+
