@@ -1,5 +1,142 @@
 menu "hai-os-simplexl board config"
 
+    choice BOARD_TYPE
+        prompt "Board Type"
+        default BOARD_TYPE_HAI_OS_SIMPLEXL
+        help
+            Chọn loại board cho hai-os-simplexl
+            
+        config BOARD_TYPE_HAI_OS_SIMPLEXL
+            bool "hai-os-simpleXL"
+            depends on IDF_TARGET_ESP32S3
+            help
+                Board hai-os-simpleXL với LCD và Touch support
+    endchoice
+
+    choice DISPLAY_LCD_TYPE
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL
+        prompt "LCD Display Type"
+        default LCD_ST7796_320X480
+        help
+            Chọn loại màn hình LCD
+            
+        config LCD_ST7796_320X480
+            bool "ST7796 320x480 IPS"
+            help
+                ST7796 LCD 320x480 IPS (mặc định)
+                
+        config LCD_ST7789_240X320
+            bool "ST7789 240x320 IPS"
+            help
+                ST7789 LCD 240x320 IPS
+                
+        config LCD_ST7789_240X240
+            bool "ST7789 240x240"
+            help
+                ST7789 LCD 240x240
+                
+        config LCD_ILI9341_240X320
+            bool "ILI9341 240x320"
+            help
+                ILI9341 LCD 240x320
+                
+        config LCD_CUSTOM
+            bool "Custom LCD (Tùy chỉnh)"
+            help
+                Tùy chỉnh thông số màn hình
+    endchoice
+
+    config HAI_LCD_PIN_MOSI
+        int "LCD MOSI Pin"
+        default 47
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL
+        help
+            Chân MOSI cho LCD SPI bus
+            
+    config HAI_LCD_PIN_CLK
+        int "LCD CLK Pin"
+        default 21
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL
+        help
+            Chân CLK cho LCD SPI bus
+            
+    config HAI_LCD_PIN_CS
+        int "LCD CS Pin"
+        default 41
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL
+        help
+            Chân CS cho LCD SPI bus
+            
+    config HAI_LCD_PIN_DC
+        int "LCD DC Pin"
+        default 40
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL
+        help
+            Chân DC cho LCD SPI bus
+            
+    config HAI_LCD_PIN_RST
+        int "LCD RST Pin"
+        default 45
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL
+        help
+            Chân RST cho LCD
+            
+    config HAI_LCD_PIN_BK_LIGHT
+        int "LCD Backlight Pin"
+        default 42
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL
+        help
+            Chân điều khiển backlight LCD (PWM)
+            
+    config HAI_LCD_WIDTH
+        int "LCD Width (pixels)"
+        default 320
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL && LCD_CUSTOM
+        help
+            Độ rộng màn hình LCD (pixels)
+            
+    config HAI_LCD_HEIGHT
+        int "LCD Height (pixels)"
+        default 480
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL && LCD_CUSTOM
+        help
+            Độ cao màn hình LCD (pixels)
+
+    config HAI_TOUCH_ENABLE
+        bool "Enable Touch Panel"
+        default y
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL
+        help
+            Bật hỗ trợ màn hình cảm ứng
+            
+    config HAI_TOUCH_PIN_SDA
+        int "Touch I2C SDA Pin"
+        default 8
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL && HAI_TOUCH_ENABLE
+        help
+            Chân SDA cho Touch I2C bus
+            
+    config HAI_TOUCH_PIN_SCL
+        int "Touch I2C SCL Pin"
+        default 11
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL && HAI_TOUCH_ENABLE
+        help
+            Chân SCL cho Touch I2C bus
+            
+    config HAI_TOUCH_PIN_RST
+        int "Touch RST Pin"
+        default 9
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL && HAI_TOUCH_ENABLE
+        help
+            Chân RST cho Touch controller
+            
+    config HAI_TOUCH_PIN_INT
+        int "Touch INT Pin"
+        default 13
+        depends on BOARD_TYPE_HAI_OS_SIMPLEXL && HAI_TOUCH_ENABLE
+        help
+            Chân INT (interrupt) cho Touch controller
+
     config HAI_AUDIO_I2S_PORT
         int "Audio I2S port"
         range 0 1

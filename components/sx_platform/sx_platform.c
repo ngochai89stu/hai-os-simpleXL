@@ -10,25 +10,48 @@
 #include "esp_lcd_st7796.h"
 #include "esp_lcd_touch_ft5x06.h"
 
-// GPIO mapping theo board mẫu bread-compact-wifi-lcd
+// GPIO mapping từ Kconfig
 #define LCD_HOST_ID         SPI3_HOST
-#define LCD_PIN_NUM_MOSI    47  // Board mẫu: GPIO 47
-#define LCD_PIN_NUM_CLK     21  // Board mẫu: GPIO 21
-#define LCD_PIN_NUM_CS      41  // Board mẫu: GPIO 41
-#define LCD_PIN_NUM_DC      40  // Board mẫu: GPIO 40
-#define LCD_PIN_NUM_RST     45  // Board mẫu: GPIO 45
-#define LCD_PIN_NUM_BK_LIGHT 42 // Board mẫu: GPIO 42 (tránh conflict với Audio DOUT GPIO 7) 
 
-// CTP (Capacitive Touch Panel) GPIO mapping
-#define CTP_I2C_SDA_GPIO    8   // CTP I2C SDA
-#define CTP_I2C_SCL_GPIO    11  // CTP I2C SCL
-#define CTP_RST_GPIO        9   // CTP Reset
-#define CTP_INT_GPIO        13  // CTP Interrupt
+// LCD pins từ Kconfig
+#define LCD_PIN_NUM_MOSI    CONFIG_HAI_LCD_PIN_MOSI
+#define LCD_PIN_NUM_CLK     CONFIG_HAI_LCD_PIN_CLK
+#define LCD_PIN_NUM_CS      CONFIG_HAI_LCD_PIN_CS
+#define LCD_PIN_NUM_DC      CONFIG_HAI_LCD_PIN_DC
+#define LCD_PIN_NUM_RST     CONFIG_HAI_LCD_PIN_RST
+#define LCD_PIN_NUM_BK_LIGHT CONFIG_HAI_LCD_PIN_BK_LIGHT
+
+// CTP (Capacitive Touch Panel) GPIO mapping từ Kconfig
+#if CONFIG_HAI_TOUCH_ENABLE
+#define CTP_I2C_SDA_GPIO    CONFIG_HAI_TOUCH_PIN_SDA
+#define CTP_I2C_SCL_GPIO    CONFIG_HAI_TOUCH_PIN_SCL
+#define CTP_RST_GPIO        CONFIG_HAI_TOUCH_PIN_RST
+#define CTP_INT_GPIO        CONFIG_HAI_TOUCH_PIN_INT
 #define CTP_I2C_BUS_NUM     I2C_NUM_1  // I2C bus cho touch (port 1, volume dùng port 0)
 #define CTP_I2C_FREQ_HZ     400000  // 400kHz cho touch controller
+#endif
 
+// LCD resolution từ Kconfig hoặc mặc định theo loại LCD
+#if defined(CONFIG_LCD_ST7796_320X480)
 #define LCD_H_RES           320
 #define LCD_V_RES           480
+#elif defined(CONFIG_LCD_ST7789_240X320)
+#define LCD_H_RES           240
+#define LCD_V_RES           320
+#elif defined(CONFIG_LCD_ST7789_240X240)
+#define LCD_H_RES           240
+#define LCD_V_RES           240
+#elif defined(CONFIG_LCD_ILI9341_240X320)
+#define LCD_H_RES           240
+#define LCD_V_RES           320
+#elif defined(CONFIG_LCD_CUSTOM)
+#define LCD_H_RES           CONFIG_HAI_LCD_WIDTH
+#define LCD_V_RES           CONFIG_HAI_LCD_HEIGHT
+#else
+// Default fallback
+#define LCD_H_RES           320
+#define LCD_V_RES           480
+#endif
 
 // LEDC configuration for PWM backlight
 #define LEDC_TIMER              LEDC_TIMER_0
@@ -216,18 +239,18 @@ static i2c_master_bus_handle_t s_touch_i2c_bus_handle = NULL;
 
 // Phase 3: Platform initialization for touch hardware
 esp_err_t sx_platform_touch_init(sx_touch_handles_t *touch_handles) {
-    // CRITICAL: Log ERROR first to ensure it always appears (even if function crashes early)
-    ESP_LOGE(TAG, "[TOUCH] ===== sx_platform_touch_init() ENTRY POINT =====");
-    ESP_LOGI(TAG, "[TOUCH] sx_platform_touch_init() called");
-    
     if (touch_handles == NULL) {
-        ESP_LOGE(TAG, "[TOUCH] ERROR: touch_handles is NULL - returning ESP_ERR_INVALID_ARG");
+        ESP_LOGE(TAG, "[TOUCH] ERROR: touch_handles is NULL");
         return ESP_ERR_INVALID_ARG;
     }
-    ESP_LOGI(TAG, "[TOUCH] touch_handles is valid (ptr=%p), continuing...", (void*)touch_handles);
     
     // Zero-initialize handles to ensure clean state
     touch_handles->touch_handle = NULL;
+    
+#if !CONFIG_HAI_TOUCH_ENABLE
+    ESP_LOGI(TAG, "[TOUCH] Touch panel disabled in Kconfig, skipping initialization");
+    return ESP_OK;
+#endif
     
     ESP_LOGI(TAG, "[TOUCH] Starting touch panel initialization...");
     ESP_LOGI(TAG, "[TOUCH] Touch config: SDA=%d, SCL=%d, INT=%d, RST=%d, I2C_BUS=%d, FREQ=%d Hz",

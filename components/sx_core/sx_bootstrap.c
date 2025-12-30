@@ -112,6 +112,7 @@ esp_err_t sx_bootstrap_start(void) {
     ESP_LOGE(TAG, "========================================");
     ESP_LOGE(TAG, "=== TOUCH INIT START (BOOTSTRAP) ===");
     ESP_LOGE(TAG, "========================================");
+#if CONFIG_HAI_TOUCH_ENABLE
     ESP_LOGI(TAG, "=== Starting touch driver initialization ===");
     ESP_LOGI(TAG, "About to call sx_platform_touch_init...");
     sx_touch_handles_t touch_handles = {0};
@@ -139,6 +140,9 @@ esp_err_t sx_bootstrap_start(void) {
     }
     ESP_LOGI(TAG, "=== Touch driver initialization complete ===");
     ESP_LOGE(TAG, "========================================");
+#else
+    ESP_LOGI(TAG, "Touch panel disabled in Kconfig, skipping touch initialization");
+#endif
     ESP_LOGE(TAG, "=== TOUCH INIT END (BOOTSTRAP) ===");
     ESP_LOGE(TAG, "========================================");
 
