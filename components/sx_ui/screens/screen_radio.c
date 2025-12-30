@@ -50,15 +50,9 @@ static char s_last_error[256] = {0};
 static void on_create(void) {
     ESP_LOGI(TAG, "Radio screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -174,10 +168,6 @@ static void on_create(void) {
     screen_common_add_touch_probe(container, "Radio Screen", SCREEN_ID_RADIO);
     #endif
     
-    lvgl_port_unlock();
-    
-    // Verification: Log screen creation
-    #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_RADIO, "Radio", container, s_content);
     #endif
 }
@@ -204,13 +194,11 @@ static void retry_btn_cb(lv_event_t *e) {
     if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
         ESP_LOGI(TAG, "Retry button clicked");
         // Hide error UI
-        if (s_error_label != NULL && lvgl_port_lock(0)) {
+        if (s_error_label != NULL) {
             lv_obj_add_flag(s_error_label, LV_OBJ_FLAG_HIDDEN);
-            lvgl_port_unlock();
         }
-        if (s_retry_btn != NULL && lvgl_port_lock(0)) {
+        if (s_retry_btn != NULL) {
             lv_obj_add_flag(s_retry_btn, LV_OBJ_FLAG_HIDDEN);
-            lvgl_port_unlock();
         }
         
         // Retry playing last station
@@ -234,13 +222,11 @@ static void station_item_click_cb(lv_event_t *e) {
             ESP_LOGI(TAG, "Playing station: %s", key);
             
             // Hide error UI when starting new station
-            if (s_error_label != NULL && lvgl_port_lock(0)) {
+            if (s_error_label != NULL) {
                 lv_obj_add_flag(s_error_label, LV_OBJ_FLAG_HIDDEN);
-                lvgl_port_unlock();
             }
-            if (s_retry_btn != NULL && lvgl_port_lock(0)) {
+            if (s_retry_btn != NULL) {
                 lv_obj_add_flag(s_retry_btn, LV_OBJ_FLAG_HIDDEN);
-                lvgl_port_unlock();
             }
             
             esp_err_t ret = sx_radio_play_station(key);
@@ -259,19 +245,16 @@ static void on_show(void) {
     
     // Add event handlers if not already added
     if (s_play_btn != NULL && s_station_list != NULL) {
-        if (lvgl_port_lock(0)) {
-            lv_obj_add_event_cb(s_play_btn, play_pause_btn_cb, LV_EVENT_CLICKED, NULL);
-            if (s_retry_btn != NULL) {
-                lv_obj_add_event_cb(s_retry_btn, retry_btn_cb, LV_EVENT_CLICKED, NULL);
-            }
-            
-            // Add click handlers for station items
-            uint32_t child_cnt = lv_obj_get_child_cnt(s_station_list);
-            for (uint32_t i = 0; i < child_cnt; i++) {
-                lv_obj_t *child = lv_obj_get_child(s_station_list, i);
-                lv_obj_add_event_cb(child, station_item_click_cb, LV_EVENT_CLICKED, NULL);
-            }
-            lvgl_port_unlock();
+        lv_obj_add_event_cb(s_play_btn, play_pause_btn_cb, LV_EVENT_CLICKED, NULL);
+        if (s_retry_btn != NULL) {
+            lv_obj_add_event_cb(s_retry_btn, retry_btn_cb, LV_EVENT_CLICKED, NULL);
+        }
+        
+        // Add click handlers for station items
+        uint32_t child_cnt = lv_obj_get_child_cnt(s_station_list);
+        for (uint32_t i = 0; i < child_cnt; i++) {
+            lv_obj_t *child = lv_obj_get_child(s_station_list, i);
+            lv_obj_add_event_cb(child, station_item_click_cb, LV_EVENT_CLICKED, NULL);
         }
     }
 }
@@ -289,24 +272,17 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_RADIO);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 
 static void on_update(const sx_state_t *state) {
-    if (!lvgl_port_lock(0)) {
-        return;
-    }
-    
     // Check for radio error events
     sx_event_t evt;
     while (sx_dispatcher_poll_event(&evt)) {
@@ -368,8 +344,6 @@ static void on_update(const sx_state_t *state) {
             lv_label_set_text(s_station_title, url);
         }
     }
-    
-    lvgl_port_unlock();
 }
 
 // Register this screen
