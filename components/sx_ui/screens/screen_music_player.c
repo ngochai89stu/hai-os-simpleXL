@@ -71,15 +71,9 @@ static void next_btn_cb(lv_event_t *e) {
 static void on_create(void) {
     ESP_LOGI(TAG, "Music Player screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -225,8 +219,6 @@ static void on_create(void) {
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_MUSIC_PLAYER, "Music Player", container, s_content);
     #endif
-    
-    lvgl_port_unlock();
 }
 
 static void on_show(void) {
@@ -244,10 +236,6 @@ static void on_hide(void) {
 }
 
 static void on_update(const sx_state_t *state) {
-    if (!lvgl_port_lock(0)) {
-        return;
-    }
-    
     // Update play/pause button icon
     bool is_playing = sx_audio_is_playing();
     if (is_playing != s_last_playing_state && s_play_label != NULL) {
@@ -268,8 +256,6 @@ static void on_update(const sx_state_t *state) {
         // Update track info if available in state (future enhancement)
         // For now, we rely on events for track updates
     }
-    
-    lvgl_port_unlock();
 }
 
 static void on_destroy(void) {
