@@ -24,15 +24,9 @@ static void image_selector_cb(lv_event_t *e);
 static void on_create(void) {
     ESP_LOGI(TAG, "Screensaver Settings screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -105,8 +99,6 @@ static void on_create(void) {
     // Add event handler for image selector
     lv_obj_add_event_cb(s_image_selector, image_selector_cb, LV_EVENT_VALUE_CHANGED, NULL);
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_SCREENSAVER_SETTING, "Screensaver Setting", container, s_content);
@@ -142,7 +134,7 @@ static void on_show(void) {
     #endif
     
     // Reload settings
-    if (s_image_selector != NULL && lvgl_port_lock(0)) {
+    if (s_image_selector != NULL) {
         char saved_bg[64] = {0};
         if (sx_settings_get_string_default("screensaver_bg_image", saved_bg, sizeof(saved_bg), "Default") == ESP_OK) {
             const char *options[] = {"Default", "Gradient", "Image 1", "Image 2", "Custom"};
@@ -153,7 +145,6 @@ static void on_show(void) {
                 }
             }
         }
-        lvgl_port_unlock();
     }
 }
 
@@ -170,16 +161,13 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_SCREENSAVER_SETTING);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 

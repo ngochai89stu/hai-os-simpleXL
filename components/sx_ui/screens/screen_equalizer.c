@@ -38,15 +38,9 @@ static void reverb_slider_cb(lv_event_t *e);
 static void on_create(void) {
     ESP_LOGI(TAG, "Equalizer screen onCreate");
     
-    if (!lvgl_port_lock(0)) {
-        ESP_LOGE(TAG, "Failed to acquire LVGL lock");
-        return;
-    }
-    
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
         ESP_LOGE(TAG, "Screen container is NULL");
-        lvgl_port_unlock();
         return;
     }
     
@@ -153,8 +147,6 @@ static void on_create(void) {
     lv_obj_set_style_text_color(apply_label, lv_color_hex(0xFFFFFF), 0);
     lv_obj_center(apply_label);
     
-    lvgl_port_unlock();
-    
     // Verification: Log screen creation
     #if SX_UI_VERIFY_MODE
     sx_ui_verify_on_create(SCREEN_ID_EQUALIZER, "Equalizer", container, s_content);
@@ -175,16 +167,13 @@ static void on_destroy(void) {
     sx_ui_verify_on_destroy(SCREEN_ID_EQUALIZER);
     #endif
     
-    if (lvgl_port_lock(0)) {
-        if (s_top_bar != NULL) {
-            lv_obj_del(s_top_bar);
-            s_top_bar = NULL;
-        }
-        if (s_content != NULL) {
-            lv_obj_del(s_content);
-            s_content = NULL;
-        }
-        lvgl_port_unlock();
+    if (s_top_bar != NULL) {
+        lv_obj_del(s_top_bar);
+        s_top_bar = NULL;
+    }
+    if (s_content != NULL) {
+        lv_obj_del(s_content);
+        s_content = NULL;
     }
 }
 
@@ -273,40 +262,36 @@ static void on_show(void) {
     #endif
     
     // Load current EQ settings and update UI
-    if (lvgl_port_lock(0)) {
-        // Load current preset
-        sx_audio_eq_preset_t current_preset = sx_audio_eq_get_preset();
-        if (s_preset_selector != NULL) {
-            lv_dropdown_set_selected(s_preset_selector, (uint16_t)current_preset);
-        }
-        
-        // Load current band gains
-        int16_t current_gains[SX_AUDIO_EQ_NUM_BANDS];
-        if (sx_audio_eq_get_bands(current_gains) == ESP_OK) {
-            for (int i = 0; i < 10; i++) {
-                if (s_band_sliders[i] != NULL) {
-                    // Convert from dB gain (-120 to +120 in 0.1dB units) to slider value (0-100)
-                    int32_t slider_value = 50 + (current_gains[i] * 50 / 120);
-                    if (slider_value < 0) slider_value = 0;
-                    if (slider_value > 100) slider_value = 100;
-                    lv_slider_set_value(s_band_sliders[i], slider_value, LV_ANIM_OFF);
-                }
+    // Load current preset
+    sx_audio_eq_preset_t current_preset = sx_audio_eq_get_preset();
+    if (s_preset_selector != NULL) {
+        lv_dropdown_set_selected(s_preset_selector, (uint16_t)current_preset);
+    }
+    
+    // Load current band gains
+    int16_t current_gains[SX_AUDIO_EQ_NUM_BANDS];
+    if (sx_audio_eq_get_bands(current_gains) == ESP_OK) {
+        for (int i = 0; i < 10; i++) {
+            if (s_band_sliders[i] != NULL) {
+                // Convert from dB gain (-120 to +120 in 0.1dB units) to slider value (0-100)
+                int32_t slider_value = 50 + (current_gains[i] * 50 / 120);
+                if (slider_value < 0) slider_value = 0;
+                if (slider_value > 100) slider_value = 100;
+                lv_slider_set_value(s_band_sliders[i], slider_value, LV_ANIM_OFF);
             }
         }
-        
-        // Load current reverb level from reverb service
-        if (s_reverb_slider != NULL) {
-            uint8_t current_reverb = sx_audio_reverb_get_level();
-            lv_slider_set_value(s_reverb_slider, current_reverb, LV_ANIM_OFF);
-        }
-        
-        // Add event handlers
-        if (s_preset_selector != NULL && s_apply_btn != NULL) {
-            lv_obj_add_event_cb(s_preset_selector, preset_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
-            lv_obj_add_event_cb(s_apply_btn, apply_btn_cb, LV_EVENT_CLICKED, NULL);
-        }
-        
-        lvgl_port_unlock();
+    }
+    
+    // Load current reverb level from reverb service
+    if (s_reverb_slider != NULL) {
+        uint8_t current_reverb = sx_audio_reverb_get_level();
+        lv_slider_set_value(s_reverb_slider, current_reverb, LV_ANIM_OFF);
+    }
+    
+    // Add event handlers
+    if (s_preset_selector != NULL && s_apply_btn != NULL) {
+        lv_obj_add_event_cb(s_preset_selector, preset_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+        lv_obj_add_event_cb(s_apply_btn, apply_btn_cb, LV_EVENT_CLICKED, NULL);
     }
 }
 
