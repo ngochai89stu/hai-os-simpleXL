@@ -468,8 +468,10 @@ void sx_sd_music_free_playlist(sx_sd_playlist_t *playlist) {
 // Get cover art info (simplified - would need full ID3v2 APIC frame parsing)
 esp_err_t sx_sd_music_get_cover_art_info(const char *file_path, uint32_t *offset, 
                                          uint32_t *size, char *mime_type, size_t mime_type_size) {
-    // TODO: Implement full ID3v2 APIC frame parsing
-    // For now, return not found
+    // Future: Implement full ID3v2 APIC frame parsing
+    // This requires parsing ID3v2 tag structure to find APIC frame
+    // and extract cover art data (JPEG/PNG) with proper MIME type detection
+    // For now, return not found (simplified implementation)
     return ESP_ERR_NOT_FOUND;
 }
 

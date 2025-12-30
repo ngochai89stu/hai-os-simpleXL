@@ -204,17 +204,42 @@ sx_display_handles_t sx_platform_display_init(void) {
     ret = esp_lcd_new_panel_ili9341(io_handle, &panel_config, &panel_handle);
     
 #elif defined(CONFIG_LCD_CUSTOM)
-    // Custom LCD - default to ST7796 for now
-    ESP_LOGI(TAG, "Initializing Custom LCD (%dx%d) - using ST7796 driver", LCD_H_RES, LCD_V_RES);
-    panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_BGR;
+    // Custom LCD - try to auto-detect based on resolution
+    ESP_LOGI(TAG, "Initializing Custom LCD (%dx%d)", LCD_H_RES, LCD_V_RES);
     
-    st7796_vendor_config_t vendor_config = {
-        .init_cmds = st7796u_init_cmds,
-        .init_cmds_size = sizeof(st7796u_init_cmds) / sizeof(st7796_lcd_init_cmd_t),
-    };
-    panel_config.vendor_config = &vendor_config;
-
-    ret = esp_lcd_new_panel_st7796(io_handle, &panel_config, &panel_handle);
+    // Auto-select driver based on resolution (heuristic)
+    // Most common: 320x480 = ST7796, 240x320 = ST7789/ILI9341, 240x240 = ST7789
+    if (LCD_H_RES == 320 && LCD_V_RES == 480) {
+        // Likely ST7796
+        ESP_LOGI(TAG, "Custom LCD: Detected 320x480, using ST7796 driver");
+        panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_BGR;
+        st7796_vendor_config_t vendor_config = {
+            .init_cmds = st7796u_init_cmds,
+            .init_cmds_size = sizeof(st7796u_init_cmds) / sizeof(st7796_lcd_init_cmd_t),
+        };
+        panel_config.vendor_config = &vendor_config;
+        ret = esp_lcd_new_panel_st7796(io_handle, &panel_config, &panel_handle);
+    } else if (LCD_H_RES == 240 && LCD_V_RES == 320) {
+        // Likely ST7789 or ILI9341 - try ST7789 first (more common)
+        ESP_LOGI(TAG, "Custom LCD: Detected 240x320, using ST7789 driver");
+        panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_RGB;
+        ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle);
+    } else if (LCD_H_RES == 240 && LCD_V_RES == 240) {
+        // Likely ST7789 square
+        ESP_LOGI(TAG, "Custom LCD: Detected 240x240, using ST7789 driver");
+        panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_RGB;
+        ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle);
+    } else {
+        // Unknown resolution - default to ST7796
+        ESP_LOGW(TAG, "Custom LCD: Unknown resolution %dx%d, defaulting to ST7796", LCD_H_RES, LCD_V_RES);
+        panel_config.rgb_ele_order = ESP_LCD_COLOR_SPACE_BGR;
+        st7796_vendor_config_t vendor_config = {
+            .init_cmds = st7796u_init_cmds,
+            .init_cmds_size = sizeof(st7796u_init_cmds) / sizeof(st7796_lcd_init_cmd_t),
+        };
+        panel_config.vendor_config = &vendor_config;
+        ret = esp_lcd_new_panel_st7796(io_handle, &panel_config, &panel_handle);
+    }
     
 #else
     // Default fallback to ST7796

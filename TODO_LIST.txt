@@ -1,0 +1,13 @@
+﻿sx_assets.c:27: // static sdmmc_card_t *s_card = NULL; // TODO: Phase 3 - Will be used when SD card fully implemented
+sx_assets.c:60: // TODO: Phase 3 - Load RGB565 from SD card
+sx_led_service.c:15: // TODO: Migrate to new RMT encoder API (rmt_tx.h) when WS2812 encoder is implemented
+sx_led_service.c:34: // TODO: Migrate to new RMT encoder API when WS2812 encoder is implemented
+sx_led_service.c:164: // TODO: Migrate to new RMT encoder API (rmt_tx.h + rmt_encoder.h) when WS2812 encoder is implemented
+sx_playlist_manager.c:415: // TODO: Actually preload audio data into buffer for gapless playback
+sx_power_service.c:10: // TODO: Migrate to esp_adc/adc_oneshot.h and esp_adc/adc_cali.h when implementing battery monitoring
+sx_power_service.c:18: // TODO: Use esp_pm component or new RTC clock API for frequency control
+sx_power_service.c:98: // TODO: Migrate to esp_adc/adc_oneshot.h and esp_adc/adc_cali.h
+sx_power_service.c:164: // TODO: Use esp_pm component or new RTC clock API for frequency control
+sx_power_service.c:208: // TODO: Migrate to esp_adc/adc_oneshot.h and esp_adc/adc_cali.h
+sx_radio_service.c:830: // TODO: OGG decoder support
+sx_sd_music_service.c:471: // TODO: Implement full ID3v2 APIC frame parsing

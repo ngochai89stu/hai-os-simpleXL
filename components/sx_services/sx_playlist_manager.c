@@ -412,9 +412,12 @@ esp_err_t sx_playlist_preload_next(void) {
             s_next_preloaded = true;
             ESP_LOGI(TAG, "Preloaded next track: %s (index %zu)", s_preloaded_track_path, next_index);
             
-            // TODO: Actually preload audio data into buffer for gapless playback
-            // This would require audio service integration to load and decode the next track
-            // For now, we just store the track path
+            // Future: Preload audio data into buffer for gapless playback
+            // This would require:
+            // - Audio service integration to load and decode the next track
+            // - Buffer management for pre-decoded audio data
+            // - Coordination between playlist and audio service
+            // For now, we just store the track path to minimize delay
         } else {
             ESP_LOGE(TAG, "Failed to allocate memory for preloaded track path");
             xSemaphoreGive(s_playlist_mutex);

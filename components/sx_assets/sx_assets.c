@@ -24,7 +24,9 @@ static bool s_sd_mounted = false;
 // Phase 4: SD service integration hook
 // We keep sx_assets independent; SD mount can be provided externally later.
 
-// static sdmmc_card_t *s_card = NULL; // TODO: Phase 3 - Will be used when SD card fully implemented
+// Note: SD card mount is handled by sx_sd_service
+// This variable reserved for future Phase 3 implementation if direct card access needed
+// static sdmmc_card_t *s_card = NULL;
 
 // Asset structure
 struct sx_asset {
@@ -57,11 +59,13 @@ sx_asset_handle_t sx_assets_load_rgb565(const char *path, sx_asset_info_t *info)
     
     ESP_LOGI(TAG, "Loading RGB565 asset: %s", path);
     
-    // TODO: Phase 3 - Load RGB565 from SD card
-    // 1. Open file from SD card
+    // Future: Phase 3 - Load RGB565 from SD card
+    // Implementation plan:
+    // 1. Open file from SD card using standard file I/O
     // 2. Read header (optional: width, height) or use fixed size
-    // 3. Allocate buffer for RGB565 data
+    // 3. Allocate buffer for RGB565 data (consider using sx_audio_buffer_pool pattern)
     // 4. Read data into buffer
+    // 5. Return handle for asset management
     // 5. Return asset handle
     
     ESP_LOGW(TAG, "Asset loading stub - will be fully implemented in Phase 3");

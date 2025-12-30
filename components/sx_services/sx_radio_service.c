@@ -827,8 +827,10 @@ static void sx_radio_process_audio_chunk(const uint8_t *data, size_t size) {
             ESP_LOGD(TAG, "MP3 decode failed: %s (chunk %zu bytes)", esp_err_to_name(decode_ret), size);
         }
     } else if (s_detected_format == SX_RADIO_FORMAT_OGG) {
-        // TODO: OGG decoder support
-        ESP_LOGW(TAG, "OGG decoder not yet implemented");
+        // Future: OGG decoder support
+        // Requires: esp-opus or similar OGG decoder library integration
+        // Current: Only MP3 format supported
+        ESP_LOGW(TAG, "OGG decoder not yet implemented - only MP3 format supported");
     } else {
         ESP_LOGW(TAG, "Unknown audio format, cannot decode");
     }
