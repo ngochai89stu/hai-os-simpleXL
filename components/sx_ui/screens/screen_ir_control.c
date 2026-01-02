@@ -2,12 +2,14 @@
 
 #include <esp_log.h>
 #include <string.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
 #include "sx_ir_service.h"
+#include "ui_theme_tokens.h"
+#include "ui_list.h"
 
 static const char *TAG = "screen_ir_control";
 
@@ -54,8 +56,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "IR Control");
@@ -66,73 +68,63 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Status label
     s_status_label = lv_label_create(s_content);
     lv_label_set_text(s_status_label, "Select a device to control");
-    lv_obj_set_style_text_font(s_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_status_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(s_status_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_status_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_width(s_status_label, LV_PCT(100));
     
-    // Device list (scrollable) - matching web demo
-    s_device_list = lv_obj_create(s_content);
+    // Device list (scrollable) - using shared component
+    s_device_list = ui_scrollable_list_create(s_content);
     lv_obj_set_size(s_device_list, LV_PCT(100), 150);
-    lv_obj_set_style_bg_opa(s_device_list, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_device_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_device_list, 0, LV_PART_MAIN);
-    lv_obj_set_flex_flow(s_device_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(s_device_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
-    // Device list
+    // Device list using shared component
     const char* device_names[] = {"Air Conditioner", "TV", "Fan"};
     for (int i = 0; i < IR_DEVICE_MAX; i++) {
-        lv_obj_t *device_item = lv_obj_create(s_device_list);
-        lv_obj_set_size(device_item, LV_PCT(100), 50);
-        lv_obj_set_style_bg_color(device_item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(device_item, lv_color_hex(0x3a3a3a), LV_PART_MAIN | LV_STATE_PRESSED);
-        lv_obj_set_style_border_width(device_item, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(device_item, 10, LV_PART_MAIN);
-        lv_obj_set_style_radius(device_item, 5, LV_PART_MAIN);
-        lv_obj_set_user_data(device_item, (void *)(intptr_t)i);
-        lv_obj_add_event_cb(device_item, device_item_click_cb, LV_EVENT_CLICKED, NULL);
-        
-        lv_obj_t *label = lv_label_create(device_item);
-        lv_label_set_text(label, device_names[i]);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
+        ui_list_item_two_line_create(
+            s_device_list,
+            NULL,  // No icon
+            device_names[i],
+            NULL,  // No subtitle
+            NULL,  // No extra text
+            device_item_click_cb,
+            (void*)(intptr_t)i
+        );
     }
     
     // Control panel (buttons for selected device) - matching web demo
     s_control_panel = lv_obj_create(s_content);
     lv_obj_set_size(s_control_panel, LV_PCT(100), LV_PCT(100) - 160);
-    lv_obj_set_style_bg_color(s_control_panel, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_control_panel, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_control_panel, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(s_control_panel, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_control_panel, 15, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_control_panel, UI_SPACE_LG, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_control_panel, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(s_control_panel, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(s_control_panel, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(s_control_panel, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(s_control_panel, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(s_control_panel, UI_SPACE_XL, LV_PART_MAIN);
     
     // Control buttons (Power, Temp+, Temp-, Mode, etc.)
     const char* control_labels[] = {"Power", "Temp+", "Temp-", "Mode", "Fan", "Timer"};
     for (int i = 0; i < IR_CMD_MAX; i++) {
         lv_obj_t *btn = lv_btn_create(s_control_panel);
         lv_obj_set_size(btn, 80, 50);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x3a3a3a), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x5b7fff), LV_PART_MAIN | LV_STATE_PRESSED);
+        lv_obj_set_style_bg_color(btn, UI_COLOR_BG_PRESSED, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(btn, UI_COLOR_PRIMARY, LV_PART_MAIN | LV_STATE_PRESSED);
         lv_obj_set_style_radius(btn, 5, LV_PART_MAIN);
         lv_obj_set_user_data(btn, (void *)(intptr_t)i);
         lv_obj_add_event_cb(btn, control_btn_cb, LV_EVENT_CLICKED, NULL);
         
         lv_obj_t *label = lv_label_create(btn);
         lv_label_set_text(label, control_labels[i]);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
+        lv_obj_set_style_text_font(label, UI_FONT_MEDIUM, 0);
+        lv_obj_set_style_text_color(label, UI_COLOR_TEXT_PRIMARY, 0);
         lv_obj_center(label);
     }
     

@@ -5,14 +5,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-// Include LVGL for image descriptor
-#include "lvgl.h"
-
-// LVGL v9 uses lv_image_dsc_t, v8 uses lv_img_dsc_t
-// Use lv_image_dsc_t for compatibility
-#ifndef lv_img_dsc_t
-#define lv_img_dsc_t lv_image_dsc_t
-#endif
+// P0.1: Removed LVGL include - UI task handles LVGL operations
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,24 +50,9 @@ sx_image_type_t sx_image_detect_type_from_memory(const uint8_t *data, size_t dat
 // Free image data
 void sx_image_free(uint8_t *data);
 
-// Create LVGL image descriptor from decoded RGB565 data
-// Note: The returned lv_image_dsc_t structure and its data must be kept in memory
-//       until the image is no longer used by LVGL
-// Returns NULL on error
-typedef struct {
-    lv_image_dsc_t *img_dsc;
-    uint8_t *data;  // Pointer to RGB565 data (owned by caller, must be freed)
-} sx_lvgl_image_t;
-
-// Create LVGL image descriptor from RGB565 data
-// data: RGB565 pixel data (width * height * 2 bytes)
-// width, height: Image dimensions
-// Returns sx_lvgl_image_t with img_dsc and data pointer
-// Caller must free both img_dsc and data when done
-sx_lvgl_image_t* sx_image_create_lvgl_rgb565(uint8_t *data, uint16_t width, uint16_t height);
-
-// Free LVGL image descriptor and data
-void sx_image_free_lvgl(sx_lvgl_image_t *img);
+// P0.1: LVGL image descriptor functions removed - moved to UI helper
+// UI task should create LVGL image descriptors directly using sx_lvgl.h
+// Service only provides decoded RGB565 data, UI handles LVGL operations
 
 #ifdef __cplusplus
 }

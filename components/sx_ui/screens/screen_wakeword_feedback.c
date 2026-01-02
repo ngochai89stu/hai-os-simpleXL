@@ -1,12 +1,13 @@
 #include "screen_wakeword_feedback.h"
 
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
 #include "sx_wake_word_service.h"
+#include "ui_theme_tokens.h"
 
 static const char *TAG = "screen_wakeword_feedback";
 
@@ -38,8 +39,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background (full screen, no top bar for wakeword feedback)
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token (full screen, no top bar for wakeword feedback)
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create content area (full screen)
     s_content = lv_obj_create(container);
@@ -47,13 +48,14 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     
     // Visual feedback animation (matching web demo)
     s_animation_obj = lv_obj_create(s_content);
     lv_obj_set_size(s_animation_obj, 150, 150);
-    lv_obj_set_style_bg_color(s_animation_obj, lv_color_hex(0x5b7fff), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_animation_obj, UI_COLOR_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_animation_obj, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(s_animation_obj, 75, LV_PART_MAIN);
     
@@ -70,8 +72,8 @@ static void on_create(void) {
     // Status text (matching web demo)
     s_status_label = lv_label_create(s_content);
     lv_label_set_text(s_status_label, "Listening...");
-    lv_obj_set_style_text_font(s_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_status_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(s_status_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_status_label, UI_COLOR_TEXT_PRIMARY, 0);
     
     // Register wake word callback
     // Note: This screen should be shown when wake word detection is active

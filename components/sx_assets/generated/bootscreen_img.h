@@ -30,3 +30,11 @@ extern const lv_img_dsc_t bootscreen_img;
 
 
 
+
+
+
+
+
+
+
+

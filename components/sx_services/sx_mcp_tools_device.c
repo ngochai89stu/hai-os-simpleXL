@@ -8,16 +8,17 @@
 #include "sx_wifi_service.h"
 #include "sx_state.h"
 #include "sx_dispatcher.h"
-#include "ui_router.h"
-#include "ui_screen_registry.h"
+// Forward declarations to avoid including UI headers in service (Section 7.5 SIMPLEXL_ARCH v1.3)
+typedef enum {
+    SCREEN_ID_WIFI_SETUP = 8,  // From ui_screen_registry.h
+} ui_screen_id_t;
+void ui_router_navigate_to(ui_screen_id_t screen_id);  // Forward declaration
 
 #include <esp_log.h>
 #include <string.h>
 #include "cJSON.h"
 #include "esp_system.h"
 #include "esp_mac.h"
-
-static const char *TAG = "sx_mcp_tools_device";
 
 // Use shared helpers from sx_mcp_tools.c
 extern cJSON* mcp_tool_create_response(const char *id, cJSON *result, cJSON *error);

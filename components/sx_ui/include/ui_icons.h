@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lvgl.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -53,6 +53,9 @@ lv_obj_t* ui_icon_button_create(lv_obj_t *parent, ui_icon_type_t icon_type, uint
 #ifdef __cplusplus
 }
 #endif
+
+
+
 
 
 

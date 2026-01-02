@@ -8,8 +8,8 @@
 #include "driver/spi_common.h"
 #include "sdmmc_cmd.h"
 #include "driver/gpio.h"
-#include "bootscreen_img.h"
-#include "flashscreen_img.h"
+// KHÔNG include bootscreen_img.h/flashscreen_img.h ở đây vì chúng include lvgl.h
+// Thay vào đó, access raw data trực tiếp từ generated files
 
 static const char *TAG = "sx_assets";
 
@@ -103,13 +103,35 @@ void sx_assets_set_sd_ready(bool ready) {
     s_sd_mounted = ready;
 }
 
-// Boot screen image getter
-const lv_img_dsc_t* sx_assets_get_bootscreen_img(void) {
-    return &bootscreen_img;
+// Boot screen image raw data getter
+// Note: Raw data được expose, sx_ui sẽ wrap thành lv_img_dsc_t
+// Tuân theo SIMPLEXL_ARCH v1.3 - sx_assets không include LVGL
+// Generated images được access trực tiếp từ sx_ui component qua ui_assets_wrapper
+// Hàm này giữ lại để tương thích, nhưng thực tế sx_ui sẽ dùng ui_assets_get_bootscreen_img()
+
+const sx_embedded_img_data_t* sx_assets_get_bootscreen_data(void) {
+    // Stub: Generated images được access từ sx_ui component
+    // Vì generated files include lvgl.h, chúng không thể được compile trong sx_assets
+    // sx_ui/ui_assets_wrapper.c sẽ access trực tiếp từ generated files
+    static const sx_embedded_img_data_t s_bootscreen_data = {
+        .data = NULL,  // Không thể access từ đây vì generated file include lvgl.h
+        .width = 320,
+        .height = 480,
+        .data_size = 307200,  // 320 * 480 * 2 (RGB565)
+        .color_format = 0x0B, // LV_COLOR_FORMAT_RGB565
+    };
+    return &s_bootscreen_data;
 }
 
-// Flash screen background image getter
-const lv_img_dsc_t* sx_assets_get_flashscreen_img(void) {
-    return &flashscreen_img;
+const sx_embedded_img_data_t* sx_assets_get_flashscreen_data(void) {
+    // Stub: Generated images được access từ sx_ui component
+    static const sx_embedded_img_data_t s_flashscreen_data = {
+        .data = NULL,  // Không thể access từ đây vì generated file include lvgl.h
+        .width = 320,
+        .height = 480,
+        .data_size = 307200,  // 320 * 480 * 2 (RGB565)
+        .color_format = 0x0B, // LV_COLOR_FORMAT_RGB565
+    };
+    return &s_flashscreen_data;
 }
 

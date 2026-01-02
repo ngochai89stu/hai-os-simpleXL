@@ -2,6 +2,7 @@
 #include "sx_audio_service.h"
 #include "sx_dispatcher.h"
 #include "sx_event.h"
+#include "sx_media_metadata.h"
 
 #include <esp_log.h>
 #include <string.h>
@@ -10,6 +11,64 @@
 #include "freertos/semphr.h"
 
 static const char *TAG = "sx_playlist";
+
+// Phase 5: Metadata cache structure
+typedef struct {
+    char file_path[512];
+    sx_track_meta_t meta;
+    bool valid;
+} sx_track_meta_cache_t;
+
+#define METADATA_CACHE_SIZE 32
+static sx_track_meta_cache_t s_metadata_cache[METADATA_CACHE_SIZE];
+static size_t s_cache_next_index = 0;
+
+// Phase 5: Get metadata from cache or parse new
+static sx_track_meta_t* get_track_metadata(const char *file_path) {
+    if (file_path == NULL) {
+        return NULL;
+    }
+    
+    // Check cache first
+    for (size_t i = 0; i < METADATA_CACHE_SIZE; i++) {
+        if (s_metadata_cache[i].valid && strcmp(s_metadata_cache[i].file_path, file_path) == 0) {
+            return &s_metadata_cache[i].meta;
+        }
+    }
+    
+    // Not in cache, parse and add to cache (LRU: use next index)
+    size_t cache_idx = s_cache_next_index % METADATA_CACHE_SIZE;
+    sx_track_meta_cache_t *cache_entry = &s_metadata_cache[cache_idx];
+    
+    // Clear old entry
+    memset(cache_entry, 0, sizeof(sx_track_meta_cache_t));
+    
+    // Parse metadata
+    sx_track_meta_t meta;
+    esp_err_t ret = sx_meta_parse_file(file_path, &meta);
+    
+    if (ret == ESP_OK && meta.has_metadata) {
+        // Copy to cache
+        strncpy(cache_entry->file_path, file_path, sizeof(cache_entry->file_path) - 1);
+        cache_entry->meta = meta;
+        cache_entry->valid = true;
+        s_cache_next_index++;
+        return &cache_entry->meta;
+    } else {
+        // Parse failed, try duration estimate
+        meta.duration_ms = sx_meta_estimate_duration(file_path);
+        if (meta.duration_ms > 0) {
+            // At least we have duration estimate
+            strncpy(cache_entry->file_path, file_path, sizeof(cache_entry->file_path) - 1);
+            cache_entry->meta = meta;
+            cache_entry->valid = true;
+            s_cache_next_index++;
+            return &cache_entry->meta;
+        }
+    }
+    
+    return NULL;
+}
 
 // Playlist manager state
 static bool s_initialized = false;
@@ -461,5 +520,188 @@ const char* sx_playlist_get_preloaded_track(void) {
     xSemaphoreGive(s_playlist_mutex);
     
     return track_path;
+}
+
+// Track Info (Phase 1: Hybrid Music Screen)
+// Helper functions removed - not currently used
+// May be needed in future for track title extraction
+
+size_t sx_playlist_get_count(void) {
+    if (!s_initialized || s_current_playlist == NULL) {
+        return 0;
+    }
+    
+    if (xSemaphoreTake(s_playlist_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return 0;
+    }
+    
+    size_t count = s_current_playlist->track_count;
+    xSemaphoreGive(s_playlist_mutex);
+    
+    return count;
+}
+
+const char* sx_playlist_get_title(size_t track_index) {
+    if (!s_initialized || s_current_playlist == NULL) {
+        return "Unknown Title";
+    }
+    
+    if (xSemaphoreTake(s_playlist_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return "Unknown Title";
+    }
+    
+    if (track_index >= s_current_playlist->track_count || 
+        s_current_playlist->track_paths[track_index] == NULL) {
+        xSemaphoreGive(s_playlist_mutex);
+        return "Unknown Title";
+    }
+    
+    // Phase 5: Get metadata from cache or parse
+    sx_track_meta_t *meta = get_track_metadata(s_current_playlist->track_paths[track_index]);
+    
+    static char title_buf[256];
+    if (meta != NULL && meta->has_metadata && strlen(meta->title) > 0) {
+        strncpy(title_buf, meta->title, sizeof(title_buf) - 1);
+        title_buf[sizeof(title_buf) - 1] = '\0';
+    } else {
+        // Fallback: extract from filename
+        const char *filename = strrchr(s_current_playlist->track_paths[track_index], '/');
+        if (filename == NULL) {
+            filename = strrchr(s_current_playlist->track_paths[track_index], '\\');
+        }
+        if (filename == NULL) {
+            filename = s_current_playlist->track_paths[track_index];
+        } else {
+            filename++; // Skip slash
+        }
+        
+        // Remove extension
+        strncpy(title_buf, filename, sizeof(title_buf) - 1);
+        char *dot = strrchr(title_buf, '.');
+        if (dot != NULL) {
+            *dot = '\0';
+        }
+    }
+    
+    xSemaphoreGive(s_playlist_mutex);
+    return title_buf;
+}
+
+const char* sx_playlist_get_artist(size_t track_index) {
+    if (!s_initialized || s_current_playlist == NULL) {
+        return "Unknown Artist";
+    }
+    
+    if (xSemaphoreTake(s_playlist_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return "Unknown Artist";
+    }
+    
+    if (track_index >= s_current_playlist->track_count || 
+        s_current_playlist->track_paths[track_index] == NULL) {
+        xSemaphoreGive(s_playlist_mutex);
+        return "Unknown Artist";
+    }
+    
+    // Phase 5: Get metadata from cache or parse
+    sx_track_meta_t *meta = get_track_metadata(s_current_playlist->track_paths[track_index]);
+    
+    static char artist_buf[256];
+    if (meta != NULL && meta->has_metadata && strlen(meta->artist) > 0) {
+        strncpy(artist_buf, meta->artist, sizeof(artist_buf) - 1);
+        artist_buf[sizeof(artist_buf) - 1] = '\0';
+    } else {
+        strncpy(artist_buf, "Unknown Artist", sizeof(artist_buf) - 1);
+    }
+    
+    xSemaphoreGive(s_playlist_mutex);
+    return artist_buf;
+}
+
+const char* sx_playlist_get_genre(size_t track_index) {
+    if (!s_initialized || s_current_playlist == NULL) {
+        return "Unknown Genre";
+    }
+    
+    if (xSemaphoreTake(s_playlist_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return "Unknown Genre";
+    }
+    
+    if (track_index >= s_current_playlist->track_count || 
+        s_current_playlist->track_paths[track_index] == NULL) {
+        xSemaphoreGive(s_playlist_mutex);
+        return "Unknown Genre";
+    }
+    
+    // Phase 5: Get metadata from cache or parse
+    sx_track_meta_t *meta = get_track_metadata(s_current_playlist->track_paths[track_index]);
+    
+    static char genre_buf[64];
+    if (meta != NULL && meta->has_metadata && strlen(meta->genre) > 0) {
+        strncpy(genre_buf, meta->genre, sizeof(genre_buf) - 1);
+        genre_buf[sizeof(genre_buf) - 1] = '\0';
+    } else {
+        strncpy(genre_buf, "Unknown Genre", sizeof(genre_buf) - 1);
+    }
+    
+    xSemaphoreGive(s_playlist_mutex);
+    return genre_buf;
+}
+
+uint32_t sx_playlist_get_duration(size_t track_index) {
+    if (!s_initialized || s_current_playlist == NULL) {
+        return 0;
+    }
+    
+    if (xSemaphoreTake(s_playlist_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return 0;
+    }
+    
+    if (track_index >= s_current_playlist->track_count || 
+        s_current_playlist->track_paths[track_index] == NULL) {
+        xSemaphoreGive(s_playlist_mutex);
+        return 0;
+    }
+    
+    // Phase 5: Get metadata from cache or parse
+    sx_track_meta_t *meta = get_track_metadata(s_current_playlist->track_paths[track_index]);
+    
+    uint32_t duration_sec = 0;
+    if (meta != NULL && meta->duration_ms > 0) {
+        duration_sec = meta->duration_ms / 1000; // Convert ms to seconds
+    }
+    
+    xSemaphoreGive(s_playlist_mutex);
+    return duration_sec;
+}
+
+esp_err_t sx_playlist_get_cover_path(size_t track_index, char *path, size_t path_len) {
+    if (!s_initialized || s_current_playlist == NULL || path == NULL || path_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(s_playlist_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    if (track_index >= s_current_playlist->track_count || 
+        s_current_playlist->track_paths[track_index] == NULL) {
+        xSemaphoreGive(s_playlist_mutex);
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Phase 5: Get metadata from cache first (may have cover_hint)
+    sx_track_meta_t *meta = get_track_metadata(s_current_playlist->track_paths[track_index]);
+    if (meta != NULL && meta->has_metadata && strlen(meta->cover_hint) > 0) {
+        strncpy(path, meta->cover_hint, path_len - 1);
+        path[path_len - 1] = '\0';
+        xSemaphoreGive(s_playlist_mutex);
+        return ESP_OK;
+    }
+    
+    // Phase 5: Search for cover image in directory
+    esp_err_t ret = sx_meta_find_cover(s_current_playlist->track_paths[track_index], path, path_len);
+    
+    xSemaphoreGive(s_playlist_mutex);
+    return ret;
 }
 

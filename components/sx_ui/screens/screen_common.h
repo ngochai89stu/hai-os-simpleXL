@@ -1,6 +1,6 @@
 #pragma once
 
-#include "lvgl.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
 #include "ui_screen_registry.h"
 
 #ifdef __cplusplus

@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <esp_log.h>
 
 static const char *TAG = "sx_event_pool";
@@ -10,6 +11,9 @@ static const char *TAG = "sx_event_pool";
 static char s_event_string_pool[SX_EVENT_STRING_POOL_SIZE][SX_EVENT_STRING_MAX_LEN];
 static bool s_event_string_used[SX_EVENT_STRING_POOL_SIZE] = {0};
 static bool s_pool_initialized = false;
+
+// Pool metrics
+static sx_event_string_pool_metrics_t s_metrics = {0};
 
 void sx_event_string_pool_init(void) {
     if (s_pool_initialized) {
@@ -33,10 +37,15 @@ char* sx_event_alloc_string(const char *src) {
         return NULL;
     }
     
+    // Update metrics
+    s_metrics.total_allocations++;
+    
     size_t src_len = strlen(src);
     if (src_len >= SX_EVENT_STRING_MAX_LEN) {
         ESP_LOGW(TAG, "String too long (%zu >= %d), using malloc fallback", 
                  src_len, SX_EVENT_STRING_MAX_LEN);
+        s_metrics.pool_misses++;
+        s_metrics.malloc_fallbacks++;
         return strdup(src);
     }
     
@@ -46,12 +55,22 @@ char* sx_event_alloc_string(const char *src) {
             s_event_string_used[i] = true;
             strncpy(s_event_string_pool[i], src, SX_EVENT_STRING_MAX_LEN - 1);
             s_event_string_pool[i][SX_EVENT_STRING_MAX_LEN - 1] = '\0';
+            
+            // Update metrics
+            s_metrics.pool_hits++;
+            s_metrics.current_usage++;
+            if (s_metrics.current_usage > s_metrics.peak_usage) {
+                s_metrics.peak_usage = s_metrics.current_usage;
+            }
+            
             return s_event_string_pool[i];
         }
     }
     
     // Pool is full, fallback to malloc
     ESP_LOGW(TAG, "Event string pool full, using malloc fallback");
+    s_metrics.pool_misses++;
+    s_metrics.malloc_fallbacks++;
     return strdup(src);
 }
 
@@ -69,6 +88,11 @@ void sx_event_free_string(char *str) {
             s_event_string_used[idx] = false;
             // Clear the string for security
             memset(s_event_string_pool[idx], 0, SX_EVENT_STRING_MAX_LEN);
+            
+            // Update metrics
+            if (s_metrics.current_usage > 0) {
+                s_metrics.current_usage--;
+            }
         }
     } else {
         // Pointer is malloc'd, free it
@@ -78,16 +102,28 @@ void sx_event_free_string(char *str) {
 
 void sx_event_string_pool_stats(size_t *used_count, size_t *total_count) {
     if (used_count) {
-        *used_count = 0;
-        for (int i = 0; i < SX_EVENT_STRING_POOL_SIZE; i++) {
-            if (s_event_string_used[i]) {
-                (*used_count)++;
-            }
-        }
+        *used_count = s_metrics.current_usage;
     }
     if (total_count) {
         *total_count = SX_EVENT_STRING_POOL_SIZE;
     }
+}
+
+void sx_event_string_pool_get_metrics(sx_event_string_pool_metrics_t *metrics) {
+    if (metrics) {
+        // Update current_usage before returning
+        s_metrics.current_usage = 0;
+        for (int i = 0; i < SX_EVENT_STRING_POOL_SIZE; i++) {
+            if (s_event_string_used[i]) {
+                s_metrics.current_usage++;
+            }
+        }
+        *metrics = s_metrics;
+    }
+}
+
+void sx_event_string_pool_reset_metrics(void) {
+    memset(&s_metrics, 0, sizeof(s_metrics));
 }
 
 

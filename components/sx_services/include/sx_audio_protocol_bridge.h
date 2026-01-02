@@ -32,6 +32,18 @@ bool sx_audio_protocol_bridge_is_sending_enabled(void);
 // Check if receiving is enabled
 bool sx_audio_protocol_bridge_is_receiving_enabled(void);
 
+// Update frame duration from server hello message (optimization: dynamic frame duration)
+esp_err_t sx_audio_protocol_bridge_update_frame_duration(uint32_t frame_duration_ms);
+
+// Get error statistics (optimization: error monitoring)
+typedef struct {
+    uint32_t send_errors;        // Number of send failures
+    uint32_t receive_drops;      // Number of dropped packets (queue full)
+    uint32_t decode_errors;     // Number of decode failures
+} sx_audio_bridge_stats_t;
+sx_audio_bridge_stats_t sx_audio_protocol_bridge_get_stats(void);
+void sx_audio_protocol_bridge_reset_stats(void);
+
 #ifdef __cplusplus
 }
 #endif

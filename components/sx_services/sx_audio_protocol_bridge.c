@@ -4,8 +4,11 @@
 #include "sx_protocol_ws.h"
 #include "sx_protocol_mqtt.h"
 #include "sx_protocol_audio.h"
+#include "sx_protocol_base.h"
+#include "sx_protocol_factory.h"
 #include "sx_dispatcher.h"
 #include "sx_event.h"
+#include "sx_state.h"
 
 #include <esp_log.h>
 #include <string.h>
@@ -31,8 +34,8 @@ static uint32_t s_timestamp = 0;  // Audio timestamp counter
 
 // Audio buffers
 #define OPUS_ENCODE_BUFFER_SIZE 4000  // Max Opus frame size
-static uint8_t s_opus_encode_buffer[OPUS_ENCODE_BUFFER_SIZE];
-static int16_t s_pcm_buffer[960];  // Max 20ms @ 48kHz = 960 samples
+__attribute__((unused)) static uint8_t s_opus_encode_buffer[OPUS_ENCODE_BUFFER_SIZE];
+__attribute__((unused)) static int16_t s_pcm_buffer[960];  // Max 20ms @ 48kHz = 960 samples
 
 // PCM accumulation buffer for recording callback
 static int16_t s_accumulated_pcm[960] = {0};  // Max 20ms @ 48kHz
@@ -44,12 +47,17 @@ static TaskHandle_t s_send_task_handle = NULL;
 static TaskHandle_t s_receive_task_handle = NULL;
 
 // Queue for audio packets to send
-#define AUDIO_SEND_QUEUE_SIZE 10
+#define AUDIO_SEND_QUEUE_SIZE 20      // 400ms buffer @ 20ms frames (optimized from 10)
 static QueueHandle_t s_audio_send_queue = NULL;
 
 // Queue for audio packets to play
-#define AUDIO_RECEIVE_QUEUE_SIZE 10
+#define AUDIO_RECEIVE_QUEUE_SIZE 30   // 600ms buffer @ 20ms frames for jitter tolerance (optimized from 10)
 static QueueHandle_t s_audio_receive_queue = NULL;
+
+// Error statistics (optimization: error monitoring)
+static uint32_t s_send_error_count = 0;
+static uint32_t s_receive_drop_count = 0;
+static uint32_t s_decode_error_count = 0;
 
 // Recording callback function (called from audio service)
 static void recording_callback(const int16_t *pcm, size_t sample_count, uint32_t sample_rate) {
@@ -57,7 +65,7 @@ static void recording_callback(const int16_t *pcm, size_t sample_count, uint32_t
         return;
     }
     
-    if (xSemaphoreTake(s_pcm_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (xSemaphoreTake(s_pcm_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {  // Increased timeout from 10ms to 50ms
         // Accumulate samples
         size_t max_samples = sizeof(s_accumulated_pcm) / sizeof(int16_t);
         size_t copy_count = (s_accumulated_count + sample_count <= max_samples) ? 
@@ -148,19 +156,11 @@ static void audio_send_task(void *arg) {
     
     ESP_LOGI(TAG, "Recording started, collecting PCM data...");
     
-    int16_t *pcm_frame = (int16_t *)malloc(s_opus_frame_samples * sizeof(int16_t));
-    if (pcm_frame == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate PCM frame buffer");
-        sx_audio_stop_recording();
-        sx_audio_set_recording_callback(NULL);
-        vTaskDelete(NULL);
-        return;
-    }
+    // Note: pcm_frame removed - using stack-allocated frame_samples[960] instead (line 184)
     
     uint8_t *opus_packet = (uint8_t *)malloc(OPUS_ENCODE_BUFFER_SIZE);
     if (opus_packet == NULL) {
         ESP_LOGE(TAG, "Failed to allocate Opus packet buffer");
-        free(pcm_frame);
         sx_audio_stop_recording();
         sx_audio_set_recording_callback(NULL);
         vTaskDelete(NULL);
@@ -173,7 +173,7 @@ static void audio_send_task(void *arg) {
         
         // Check if we have enough accumulated samples
         bool has_enough_samples = false;
-        if (xSemaphoreTake(s_pcm_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (xSemaphoreTake(s_pcm_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {  // Increased timeout from 10ms to 50ms
             has_enough_samples = (s_accumulated_count >= s_opus_frame_samples);
             xSemaphoreGive(s_pcm_mutex);
         }
@@ -183,7 +183,7 @@ static void audio_send_task(void *arg) {
             int16_t frame_samples[960];
             size_t samples_to_encode = 0;
             
-            if (xSemaphoreTake(s_pcm_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            if (xSemaphoreTake(s_pcm_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {  // Increased timeout from 10ms to 50ms
                 samples_to_encode = (s_accumulated_count >= s_opus_frame_samples) ? 
                                    s_opus_frame_samples : s_accumulated_count;
                 memcpy(frame_samples, s_accumulated_pcm, samples_to_encode * sizeof(int16_t));
@@ -220,12 +220,22 @@ static void audio_send_task(void *arg) {
                             .payload_size = opus_size,
                         };
                         
-                        // Send via WebSocket or MQTT
-                        if (sx_protocol_ws_is_connected()) {
-                            sx_protocol_ws_send_audio(&packet);
-                        } else if (sx_protocol_mqtt_is_connected() && 
-                                   sx_protocol_mqtt_is_audio_channel_opened()) {
-                            sx_protocol_mqtt_send_audio(&packet);
+                        // Phase 1: Migrate to use protocol base interface (eliminate duplicate code)
+                        sx_protocol_base_t *protocol = sx_protocol_factory_get_current();
+                        esp_err_t send_ret = ESP_FAIL;
+                        if (protocol && protocol->ops && protocol->ops->is_connected && 
+                            protocol->ops->is_connected(protocol) &&
+                            protocol->ops->is_audio_channel_opened &&
+                            protocol->ops->is_audio_channel_opened(protocol) &&
+                            protocol->ops->send_audio) {
+                            send_ret = protocol->ops->send_audio(protocol, &packet);
+                        }
+                        // Break loop on error to avoid spamming
+                        if (send_ret != ESP_OK) {
+                            free(packet_payload);  // Fix: Free before break to prevent memory leak
+                            s_send_error_count++;  // Track error count
+                            ESP_LOGW(TAG, "Audio send failed (errors: %lu), breaking loop", s_send_error_count);
+                            break;
                         }
                         
                         free(packet_payload);
@@ -238,7 +248,6 @@ static void audio_send_task(void *arg) {
     
     // Cleanup
     free(opus_packet);
-    free(pcm_frame);
     sx_audio_set_recording_callback(NULL);
     sx_audio_stop_recording();
     ESP_LOGI(TAG, "Audio send task stopped");
@@ -305,7 +314,9 @@ static void audio_receive_task(void *arg) {
                     ESP_LOGD(TAG, "Decoded and fed %zu PCM samples @ %lu Hz", 
                             pcm_samples, packet.sample_rate);
                 } else {
-                    ESP_LOGW(TAG, "Failed to decode Opus packet: %s", esp_err_to_name(ret));
+                    s_decode_error_count++;  // Track decode errors
+                    ESP_LOGW(TAG, "Failed to decode Opus packet (errors: %lu): %s", 
+                            s_decode_error_count, esp_err_to_name(ret));
                 }
             }
             
@@ -327,6 +338,14 @@ static void on_audio_packet_received(const sx_audio_stream_packet_t *packet) {
     if (!s_receive_enabled || packet == NULL) {
         return;
     }
+
+    // State-based audio routing: only accept audio when device is BUSY (speaking)
+    sx_state_t st;
+    sx_dispatcher_get_state(&st);
+    if (st.ui.device_state != SX_DEV_BUSY) {
+        // Drop packet if not in correct state
+        return;
+    }
     
     // Copy packet to queue
     sx_audio_stream_packet_t packet_copy = *packet;
@@ -339,7 +358,8 @@ static void on_audio_packet_received(const sx_audio_stream_packet_t *packet) {
     memcpy(packet_copy.payload, packet->payload, packet->payload_size);
     
     if (xQueueSend(s_audio_receive_queue, &packet_copy, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "Audio receive queue full, dropping packet");
+        s_receive_drop_count++;  // Track dropped packets
+        ESP_LOGW(TAG, "Audio receive queue full, dropping packet (drops: %lu)", s_receive_drop_count);
         free(packet_copy.payload);
     }
 }
@@ -438,9 +458,16 @@ esp_err_t sx_audio_protocol_bridge_enable_receive(bool enable) {
     s_receive_enabled = enable;
     
     if (enable) {
-        // Register audio callback with protocols
-        sx_protocol_ws_set_audio_callback(on_audio_packet_received);
-        sx_protocol_mqtt_set_audio_callback(on_audio_packet_received);
+        // Phase 1: Register audio callback with all available protocols (via base interface)
+        sx_protocol_base_t *ws_protocol = sx_protocol_ws_get_base();
+        if (ws_protocol && ws_protocol->ops && ws_protocol->ops->set_audio_callback) {
+            ws_protocol->ops->set_audio_callback(ws_protocol, on_audio_packet_received);
+        }
+        
+        sx_protocol_base_t *mqtt_protocol = sx_protocol_mqtt_get_base();
+        if (mqtt_protocol && mqtt_protocol->ops && mqtt_protocol->ops->set_audio_callback) {
+            mqtt_protocol->ops->set_audio_callback(mqtt_protocol, on_audio_packet_received);
+        }
         
         // Start receive task
         xTaskCreatePinnedToCore(audio_receive_task, "audio_recv", 4096, NULL, 5,
@@ -448,8 +475,15 @@ esp_err_t sx_audio_protocol_bridge_enable_receive(bool enable) {
         ESP_LOGI(TAG, "Audio receiving enabled");
     } else {
         // Unregister callbacks
-        sx_protocol_ws_set_audio_callback(NULL);
-        sx_protocol_mqtt_set_audio_callback(NULL);
+        sx_protocol_base_t *ws_protocol = sx_protocol_ws_get_base();
+        if (ws_protocol && ws_protocol->ops && ws_protocol->ops->set_audio_callback) {
+            ws_protocol->ops->set_audio_callback(ws_protocol, NULL);
+        }
+        
+        sx_protocol_base_t *mqtt_protocol = sx_protocol_mqtt_get_base();
+        if (mqtt_protocol && mqtt_protocol->ops && mqtt_protocol->ops->set_audio_callback) {
+            mqtt_protocol->ops->set_audio_callback(mqtt_protocol, NULL);
+        }
         
         // Stop receive task
         if (s_receive_task_handle != NULL) {
@@ -468,5 +502,39 @@ bool sx_audio_protocol_bridge_is_sending_enabled(void) {
 
 bool sx_audio_protocol_bridge_is_receiving_enabled(void) {
     return s_receive_enabled;
+}
+
+// Update frame duration from server hello message (optimization: dynamic frame duration)
+esp_err_t sx_audio_protocol_bridge_update_frame_duration(uint32_t frame_duration_ms) {
+    if (frame_duration_ms == 0 || frame_duration_ms > 120) {
+        return ESP_ERR_INVALID_ARG;  // Sanity check: 1-120ms
+    }
+    
+    if (s_opus_frame_duration_ms != frame_duration_ms) {
+        s_opus_frame_duration_ms = frame_duration_ms;
+        s_opus_frame_samples = (s_opus_sample_rate * s_opus_frame_duration_ms) / 1000;
+        ESP_LOGI(TAG, "Frame duration updated: %lu ms (%lu samples/frame @ %lu Hz)",
+                s_opus_frame_duration_ms, s_opus_frame_samples, s_opus_sample_rate);
+    }
+    
+    return ESP_OK;
+}
+
+// Get error statistics
+sx_audio_bridge_stats_t sx_audio_protocol_bridge_get_stats(void) {
+    sx_audio_bridge_stats_t stats = {
+        .send_errors = s_send_error_count,
+        .receive_drops = s_receive_drop_count,
+        .decode_errors = s_decode_error_count,
+    };
+    return stats;
+}
+
+// Reset error statistics
+void sx_audio_protocol_bridge_reset_stats(void) {
+    s_send_error_count = 0;
+    s_receive_drop_count = 0;
+    s_decode_error_count = 0;
+    ESP_LOGI(TAG, "Error statistics reset");
 }
 

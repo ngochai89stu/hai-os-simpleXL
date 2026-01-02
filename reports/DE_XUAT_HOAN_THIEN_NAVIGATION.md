@@ -293,3 +293,11 @@ esp_err_t sx_navigation_ble_send_command(const char *command_json);
 
 
 
+
+
+
+
+
+
+
+

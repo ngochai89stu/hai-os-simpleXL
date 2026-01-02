@@ -2,8 +2,8 @@
 
 #include <esp_log.h>
 #include <string.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
@@ -11,6 +11,8 @@
 #include "sx_stt_service.h"
 #include "sx_tts_service.h"
 #include "sx_settings_service.h"
+#include "ui_theme_tokens.h"
+#include "ui_slider.h"
 
 static const char *TAG = "screen_voice_settings";
 
@@ -41,8 +43,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Voice Settings");
@@ -53,63 +55,58 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // VAD (Voice Activity Detection) slider
     lv_obj_t *vad_label = lv_label_create(s_content);
     lv_label_set_text(vad_label, "VAD Sensitivity");
-    lv_obj_set_style_text_font(vad_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(vad_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(vad_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(vad_label, UI_COLOR_TEXT_PRIMARY, 0);
     
-    s_vad_slider = lv_slider_create(s_content);
-    lv_obj_set_size(s_vad_slider, LV_PCT(100), 20);
-    lv_obj_set_style_bg_color(s_vad_slider, lv_color_hex(0x3a3a3a), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_vad_slider, lv_color_hex(0x5b7fff), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s_vad_slider, lv_color_hex(0x5b7fff), LV_PART_KNOB);
+    // VAD slider using shared component
+    s_vad_slider = ui_gradient_slider_create(s_content, vad_slider_cb, NULL);
+    lv_obj_set_size(s_vad_slider, LV_PCT(100), UI_SIZE_SLIDER_HEIGHT_THICK);
     lv_slider_set_value(s_vad_slider, 50, LV_ANIM_OFF);
     lv_slider_set_range(s_vad_slider, 0, 100);
-    lv_obj_add_event_cb(s_vad_slider, vad_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
     
     // AEC (Acoustic Echo Cancellation) switch
     lv_obj_t *aec_label = lv_label_create(s_content);
     lv_label_set_text(aec_label, "AEC (Echo Cancellation)");
-    lv_obj_set_style_text_font(aec_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(aec_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(aec_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(aec_label, UI_COLOR_TEXT_PRIMARY, 0);
     
     s_aec_switch = lv_switch_create(s_content);
-    lv_obj_set_style_bg_color(s_aec_switch, lv_color_hex(0x3a3a3a), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_aec_switch, lv_color_hex(0x5b7fff), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_aec_switch, UI_COLOR_BG_PRESSED, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_aec_switch, UI_COLOR_PRIMARY, LV_PART_INDICATOR);
     lv_obj_add_state(s_aec_switch, LV_STATE_CHECKED);
     lv_obj_add_event_cb(s_aec_switch, aec_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
     
     // NS (Noise Suppression) switch
     lv_obj_t *ns_label = lv_label_create(s_content);
     lv_label_set_text(ns_label, "NS (Noise Suppression)");
-    lv_obj_set_style_text_font(ns_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(ns_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(ns_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(ns_label, UI_COLOR_TEXT_PRIMARY, 0);
     
     s_ns_switch = lv_switch_create(s_content);
-    lv_obj_set_style_bg_color(s_ns_switch, lv_color_hex(0x3a3a3a), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_ns_switch, lv_color_hex(0x5b7fff), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(s_ns_switch, UI_COLOR_BG_PRESSED, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_ns_switch, UI_COLOR_PRIMARY, LV_PART_INDICATOR);
     lv_obj_add_state(s_ns_switch, LV_STATE_CHECKED);
     lv_obj_add_event_cb(s_ns_switch, ns_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
     
     // Mic Gain slider
     lv_obj_t *mic_gain_label = lv_label_create(s_content);
     lv_label_set_text(mic_gain_label, "Microphone Gain");
-    lv_obj_set_style_text_font(mic_gain_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(mic_gain_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(mic_gain_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(mic_gain_label, UI_COLOR_TEXT_PRIMARY, 0);
     
-    s_mic_gain_slider = lv_slider_create(s_content);
-    lv_obj_set_size(s_mic_gain_slider, LV_PCT(100), 20);
-    lv_obj_set_style_bg_color(s_mic_gain_slider, lv_color_hex(0x3a3a3a), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_mic_gain_slider, lv_color_hex(0x5b7fff), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s_mic_gain_slider, lv_color_hex(0x5b7fff), LV_PART_KNOB);
+    // Mic Gain slider using shared component
+    s_mic_gain_slider = ui_gradient_slider_create(s_content, mic_gain_slider_cb, NULL);
+    lv_obj_set_size(s_mic_gain_slider, LV_PCT(100), UI_SIZE_SLIDER_HEIGHT_THICK);
     lv_slider_set_value(s_mic_gain_slider, 50, LV_ANIM_OFF);
     lv_slider_set_range(s_mic_gain_slider, 0, 100);
-    lv_obj_add_event_cb(s_mic_gain_slider, mic_gain_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
     
     // Load current settings
     load_settings();

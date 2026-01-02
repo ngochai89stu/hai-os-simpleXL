@@ -9,8 +9,7 @@
 #include "freertos/task.h"
 #include "ui_router.h"
 #include "ui_screen_registry.h"
-#include "esp_lvgl_port.h"
-#include "lvgl.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
 
 static const char *TAG = "sx_ui_verify";
 

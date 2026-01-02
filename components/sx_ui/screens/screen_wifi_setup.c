@@ -2,8 +2,8 @@
 
 #include <esp_log.h>
 #include <string.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
@@ -11,6 +11,9 @@
 #include "sx_wifi_service.h"
 #include "sx_settings_service.h"
 #include "sx_qr_code_service.h"
+#include "ui_qr_code_helpers.h"
+#include "ui_theme_tokens.h"
+#include "ui_list.h"
 
 static const char *TAG = "screen_wifi_setup";
 
@@ -46,8 +49,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Wi-Fi Setup");
@@ -58,26 +61,27 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Status label
     s_status_label = lv_label_create(s_content);
     lv_label_set_text(s_status_label, "");
-    lv_obj_set_style_text_font(s_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_status_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(s_status_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_status_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_width(s_status_label, LV_PCT(100));
     
     // Scan button (matching web demo)
     s_scan_btn = lv_btn_create(s_content);
-    lv_obj_set_size(s_scan_btn, LV_PCT(100), 50);
-    lv_obj_set_style_bg_color(s_scan_btn, lv_color_hex(0x5b7fff), LV_PART_MAIN);
+    lv_obj_set_size(s_scan_btn, LV_PCT(100), UI_SIZE_BUTTON_HEIGHT);
+    lv_obj_set_style_bg_color(s_scan_btn, UI_COLOR_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_radius(s_scan_btn, 5, LV_PART_MAIN);
     lv_obj_t *scan_label = lv_label_create(s_scan_btn);
     lv_label_set_text(scan_label, "Scan Networks");
-    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(scan_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(scan_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(scan_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(scan_label);
     
     // QR code container (initially hidden, shown when connected)
@@ -93,22 +97,17 @@ static void on_create(void) {
     // IP address label
     s_ip_label = lv_label_create(s_qr_container);
     lv_label_set_text(s_ip_label, "");
-    lv_obj_set_style_text_font(s_ip_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_ip_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(s_ip_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_ip_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_width(s_ip_label, LV_PCT(100));
     lv_obj_set_style_text_align(s_ip_label, LV_TEXT_ALIGN_CENTER, 0);
     
     // QR code widget (will be created when WiFi connects)
     s_qr_code_widget = NULL;
     
-    // Network list (scrollable) - matching web demo
-    s_network_list = lv_obj_create(s_content);
+    // Network list (scrollable) - using shared component
+    s_network_list = ui_scrollable_list_create(s_content);
     lv_obj_set_size(s_network_list, LV_PCT(100), LV_PCT(100) - 120);
-    lv_obj_set_style_bg_opa(s_network_list, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_network_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_network_list, 0, LV_PART_MAIN);
-    lv_obj_set_flex_flow(s_network_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(s_network_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Add event handler for scan button
     lv_obj_add_event_cb(s_scan_btn, scan_btn_cb, LV_EVENT_CLICKED, NULL);
@@ -130,50 +129,28 @@ static void refresh_network_list(void) {
     // Clear existing items
     lv_obj_clean(s_network_list);
     
-    // Add networks from scan results
+    // Add networks from scan results using shared component
     for (int i = 0; i < s_network_count; i++) {
-        lv_obj_t *network_item = lv_obj_create(s_network_list);
-        lv_obj_set_size(network_item, LV_PCT(100), 60);
-        lv_obj_set_style_bg_color(network_item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(network_item, lv_color_hex(0x3a3a3a), LV_PART_MAIN | LV_STATE_PRESSED);
-        lv_obj_set_style_border_width(network_item, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(network_item, 10, LV_PART_MAIN);
-        lv_obj_set_style_radius(network_item, 5, LV_PART_MAIN);
-        
-        // Store network index in user data
-        lv_obj_set_user_data(network_item, (void *)(intptr_t)i);
-        
-        // SSID label
-        lv_obj_t *label = lv_label_create(network_item);
-        lv_label_set_text(label, s_networks[i].ssid);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
-        
-        // Signal strength indicator
-        char signal_str[16];
-        if (s_networks[i].rssi > -50) {
-            snprintf(signal_str, sizeof(signal_str), "📶 %d dBm", s_networks[i].rssi);
-        } else if (s_networks[i].rssi > -70) {
-            snprintf(signal_str, sizeof(signal_str), "📶 %d dBm", s_networks[i].rssi);
-        } else {
-            snprintf(signal_str, sizeof(signal_str), "📶 %d dBm", s_networks[i].rssi);
-        }
-        lv_obj_t *signal = lv_label_create(network_item);
-        lv_label_set_text(signal, signal_str);
-        lv_obj_set_style_text_font(signal, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(signal, lv_color_hex(0x888888), 0);
-        lv_obj_align(signal, LV_ALIGN_RIGHT_MID, -10, 0);
-        
-        // Lock icon if encrypted
+        // Build subtitle with signal strength and encryption status
+        char subtitle[64];
+        snprintf(subtitle, sizeof(subtitle), "%d dBm", s_networks[i].rssi);
         if (s_networks[i].is_encrypted) {
-            lv_obj_t *lock = lv_label_create(network_item);
-            lv_label_set_text(lock, "🔒");
-            lv_obj_align(lock, LV_ALIGN_RIGHT_MID, -80, 0);
+            strncat(subtitle, " 🔒", sizeof(subtitle) - strlen(subtitle) - 1);
         }
         
-        // Add click handler
-        lv_obj_add_event_cb(network_item, network_item_click_cb, LV_EVENT_CLICKED, NULL);
+        // Build extra text (signal strength indicator)
+        char extra_text[16];
+        snprintf(extra_text, sizeof(extra_text), "📶");
+        
+        ui_list_item_two_line_create(
+            s_network_list,
+            NULL,  // No icon
+            s_networks[i].ssid,
+            subtitle,
+            extra_text,
+            network_item_click_cb,
+            (void*)(intptr_t)i
+        );
     }
 }
 
@@ -355,7 +332,7 @@ static void update_ip_qr_code(void) {
         snprintf(qr_text, sizeof(qr_text), "http://%s", ip_address);
         
         // Create LVGL QR code widget
-        s_qr_code_widget = sx_qr_code_create_lvgl_widget(s_qr_container, qr_text, 150);
+        s_qr_code_widget = sx_ui_qr_code_create_widget(s_qr_container, qr_text, 150);
         if (s_qr_code_widget != NULL) {
             // Center the QR code
             lv_obj_align(s_qr_code_widget, LV_ALIGN_CENTER, 0, 20);

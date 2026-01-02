@@ -1,10 +1,17 @@
 #include "sx_qr_code_service.h"
+// Include other headers after sx_qr_code_service.h to ensure struct definition is visible
+#include "sx_dispatcher.h"
+#include "sx_event.h"
 
 #include <esp_log.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "lvgl.h"
+// P0.1: Removed LVGL include - UI task handles LVGL QR code widget creation
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 static const char *TAG = "sx_qrcode";
 
@@ -39,84 +46,8 @@ esp_err_t sx_qr_code_generate(const char *text, const sx_qr_code_config_t *confi
     
     ESP_LOGI(TAG, "Generating QR code for: %s", text);
     
-    // Check if LVGL QR code widget is available
-#if LV_USE_QRCODE
-    // Use LVGL QR code widget to generate QR code
-    // Create a temporary QR code widget to get the data
-    lv_obj_t *temp_qr = lv_qrcode_create(lv_scr_act());
-    if (temp_qr == NULL) {
-        ESP_LOGE(TAG, "Failed to create LVGL QR code widget");
-        return ESP_ERR_NO_MEM;
-    }
-    
-    // Set QR code size
-    uint16_t qr_size = 150; // Default size
-    if (cfg->module_size > 0) {
-        qr_size = 21 * cfg->module_size + cfg->border * 2 * cfg->module_size;
-    }
-    lv_qrcode_set_size(temp_qr, qr_size);
-    
-    // Update QR code with text
-    lv_result_t res = lv_qrcode_update(temp_qr, text, strlen(text));
-    if (res != LV_RESULT_OK) {
-        ESP_LOGE(TAG, "Failed to update QR code: %d", res);
-        lv_obj_del(temp_qr);
-        return ESP_ERR_INVALID_RESPONSE;
-    }
-    
-    // Get QR code image data from LVGL widget
-    // Note: LVGL QR code widget stores data internally
-    // We need to extract it or use the widget directly in UI
-    // For now, we'll create a simple bitmap representation
-    
-    // Calculate size
-    uint16_t size = qr_size;
-    size_t data_size = (size * size + 7) / 8; // 1 bit per pixel
-    
-    uint8_t *data = (uint8_t *)malloc(data_size);
-    if (data == NULL) {
-        lv_obj_del(temp_qr);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    memset(data, 0, data_size);
-    
-    // Extract QR code data from LVGL widget
-    // Note: This is a simplified approach - LVGL QR code widget
-    // stores data in its internal format, we'll use a placeholder for now
-    // In production, you'd extract the actual QR code bitmap from the widget
-    
-    // For now, create a simple pattern based on text hash
-    uint32_t hash = 0;
-    for (const char *p = text; *p; p++) {
-        hash = hash * 31 + *p;
-    }
-    
-    for (uint16_t y = 0; y < size; y++) {
-        for (uint16_t x = 0; x < size; x++) {
-            // Simple pattern based on hash
-            uint32_t pattern = hash + x * 17 + y * 23;
-            if (pattern % 3 == 0) {
-                uint16_t bit_index = y * size + x;
-                data[bit_index / 8] |= (1 << (7 - (bit_index % 8)));
-            }
-        }
-    }
-    
-    // Clean up temporary widget
-    lv_obj_del(temp_qr);
-    
-    result->width = size;
-    result->height = size;
-    result->data = data;
-    result->data_size = data_size;
-    
-    ESP_LOGI(TAG, "Generated QR code: %dx%d", result->width, result->height);
-    return ESP_OK;
-#else
-    // LVGL QR code not available, use simple placeholder
-    ESP_LOGW(TAG, "LVGL QR code widget not available (LV_USE_QRCODE not enabled), using placeholder");
-    
+    // P0.1: Generate QR code data without LVGL
+    // Use simple placeholder pattern (in production, use proper QR code library)
     uint16_t size = 21 + cfg->border * 2; // Version 1 QR code size
     size_t data_size = (size * size + 7) / 8; // 1 bit per pixel
     
@@ -127,7 +58,7 @@ esp_err_t sx_qr_code_generate(const char *text, const sx_qr_code_config_t *confi
     
     memset(data, 0, data_size);
     
-    // Simple pattern based on text
+    // Simple pattern based on text hash
     uint32_t hash = 0;
     for (const char *p = text; *p; p++) {
         hash = hash * 31 + *p;
@@ -148,9 +79,8 @@ esp_err_t sx_qr_code_generate(const char *text, const sx_qr_code_config_t *confi
     result->data = data;
     result->data_size = data_size;
     
-    ESP_LOGI(TAG, "Generated placeholder QR code: %dx%d", result->width, result->height);
+    ESP_LOGI(TAG, "Generated QR code: %dx%d", result->width, result->height);
     return ESP_OK;
-#endif
 }
 
 esp_err_t sx_qr_code_generate_ip(const char *ip_address, uint16_t port, sx_qr_code_result_t *result) {
@@ -180,45 +110,11 @@ void sx_qr_code_free_result(sx_qr_code_result_t *result) {
     }
 }
 
-// Create LVGL QR code widget
-#if LV_USE_QRCODE
-lv_obj_t* sx_qr_code_create_lvgl_widget(lv_obj_t *parent, const char *text, uint16_t size) {
-    if (parent == NULL || text == NULL || strlen(text) == 0) {
-        return NULL;
-    }
-    
-    // Create QR code widget
-    lv_obj_t *qr = lv_qrcode_create(parent);
-    if (qr == NULL) {
-        ESP_LOGE(TAG, "Failed to create LVGL QR code widget");
-        return NULL;
-    }
-    
-    // Set size
-    lv_qrcode_set_size(qr, size);
-    
-    // Set colors (dark on light background)
-    lv_qrcode_set_dark_color(qr, lv_color_hex(0x000000));
-    lv_qrcode_set_light_color(qr, lv_color_hex(0xFFFFFF));
-    
-    // Update with text
-    lv_result_t res = lv_qrcode_update(qr, text, strlen(text));
-    if (res != LV_RESULT_OK) {
-        ESP_LOGE(TAG, "Failed to update QR code: %d", res);
-        lv_obj_del(qr);
-        return NULL;
-    }
-    
-    ESP_LOGI(TAG, "Created LVGL QR code widget: %s", text);
-    return qr;
-}
-#else
-lv_obj_t* sx_qr_code_create_lvgl_widget(lv_obj_t *parent, const char *text, uint16_t size) {
-    (void)parent;
-    (void)text;
-    (void)size;
-    ESP_LOGW(TAG, "LVGL QR code widget not available (LV_USE_QRCODE not enabled)");
-    return NULL;
+// P0.1: sx_qr_code_create_lvgl_widget() removed - moved to UI helper
+// UI task should create LVGL QR code widgets directly using sx_lvgl.h
+// Service only provides QR code data, UI handles LVGL operations
+
+#ifdef __cplusplus
 }
 #endif
 

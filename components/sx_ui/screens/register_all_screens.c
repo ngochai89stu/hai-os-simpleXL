@@ -25,6 +25,9 @@
 #include "screen_permission.h"
 #include "screen_screensaver.h"
 #include "screen_screensaver_setting.h"
+#include "screen_ac_control.h"
+#include "screen_system_info.h"
+#include "screen_quick_settings.h"
 
 // P1 - Advanced Feature Screens
 // screen_audio_effects.h removed - merged into Equalizer
@@ -62,6 +65,9 @@ void register_all_screens(void) {
     screen_permission_register();
     screen_screensaver_register();
     screen_screensaver_setting_register();
+    screen_ac_control_register();
+    screen_system_info_register();
+    screen_quick_settings_register();
     
     // P1 - Advanced Feature Screens (1)
     // screen_audio_effects_register() removed - merged into Equalizer

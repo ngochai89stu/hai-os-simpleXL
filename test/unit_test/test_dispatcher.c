@@ -28,6 +28,7 @@ void test_dispatcher_init(void) {
 void test_event_post_and_poll(void) {
     sx_event_t evt = {
         .type = SX_EVT_UI_INPUT,
+        .priority = SX_EVT_PRIORITY_NORMAL,
         .arg0 = 0,
         .arg1 = 0,
         .ptr = NULL
@@ -65,9 +66,10 @@ void test_state_get_set(void) {
 
 // Test event queue full scenario (drop events)
 void test_event_queue_full(void) {
-    // Fill up the queue (64 events)
+    // Fill up the queue (32 events for normal priority)
     sx_event_t evt = {
         .type = SX_EVT_UI_INPUT,
+        .priority = SX_EVT_PRIORITY_NORMAL,
         .arg0 = 0,
         .arg1 = 0,
         .ptr = NULL
@@ -81,9 +83,9 @@ void test_event_queue_full(void) {
         }
     }
     
-    // Should post at least 64 events (queue size)
+    // Should post at least 32 events (normal queue size)
     // Some may be dropped if queue is full
-    TEST_ASSERT_GREATER_OR_EQUAL(64, posted);
+    TEST_ASSERT_GREATER_OR_EQUAL(32, posted);
 }
 
 // Test state mutex protection (thread safety)
@@ -124,4 +126,3 @@ void test_invalid_state_ops(void) {
     // If we get here, operations handled gracefully
     TEST_ASSERT_TRUE(true);
 }
-

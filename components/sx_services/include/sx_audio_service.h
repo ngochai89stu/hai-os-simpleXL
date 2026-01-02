@@ -44,6 +44,22 @@ esp_err_t sx_audio_set_recording_callback(sx_audio_recording_callback_t callback
 esp_err_t sx_audio_set_volume(uint8_t volume); // 0-100
 uint8_t sx_audio_get_volume(void);
 
+// Position and Duration (Phase 1: Hybrid Music Screen)
+uint32_t sx_audio_get_position(void);      // Current position (seconds)
+uint32_t sx_audio_get_duration(void);      // Total duration (seconds)
+esp_err_t sx_audio_seek(uint32_t position); // Seek to position (seconds)
+
+// Phase 5: Audio capabilities
+typedef struct {
+    bool seek_supported;       // True if seek is supported
+} sx_audio_caps_t;
+sx_audio_caps_t sx_audio_get_caps(void);  // Get audio service capabilities
+
+// Spectrum/FFT Data (Phase 1: Hybrid Music Screen)
+esp_err_t sx_audio_get_spectrum(uint16_t *bands, size_t band_count);
+// Returns: bands[0] = Bass, bands[1] = Mid-low, bands[2] = Mid-high, bands[3] = High
+// Range: 0-255 for each band
+
 // Feed raw PCM samples (signed 16-bit stereo interleaved) into I2S pipeline.
 // sample_rate_hz must match current I2S clock or the service will ignore.
 // Return ESP_OK on success, ESP_ERR_INVALID_STATE if I2S not ready.

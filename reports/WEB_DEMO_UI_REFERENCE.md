@@ -186,3 +186,11 @@ Based on `web-demo/src/App.jsx` and analysis reports, here are the UI layouts:
 
 
 
+
+
+
+
+
+
+
+

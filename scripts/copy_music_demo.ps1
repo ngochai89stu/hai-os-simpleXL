@@ -44,3 +44,11 @@ Write-Host "2. Create audio integration layer" -ForegroundColor White
 Write-Host "3. Update screen_music_player.c" -ForegroundColor White
 Write-Host "4. Update CMakeLists.txt" -ForegroundColor White
 
+
+
+
+
+
+
+
+

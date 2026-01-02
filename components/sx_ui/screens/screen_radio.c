@@ -2,8 +2,8 @@
 
 #include <esp_log.h>
 #include <string.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "sx_ui_verify.h"
 #include "screen_common.h"
@@ -14,6 +14,8 @@
 // #include "sx_radio_station_table.h"
 #include "sx_dispatcher.h"
 #include "sx_event.h"
+#include "ui_theme_tokens.h"
+#include "ui_list.h"
 
 static const char *TAG = "screen_radio";
 
@@ -47,6 +49,9 @@ static lv_obj_t *s_container = NULL;
 static bool s_last_playing_state = false;
 static char s_last_error[256] = {0};
 
+// Forward declarations
+static void station_item_click_cb(lv_event_t *e);
+
 static void on_create(void) {
     ESP_LOGI(TAG, "Radio screen onCreate");
     
@@ -58,8 +63,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Radio");
@@ -70,35 +75,36 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Current station info (matching web demo)
     lv_obj_t *current_station = lv_obj_create(s_content);
     lv_obj_set_size(current_station, LV_PCT(100), 80);
-    lv_obj_set_style_bg_color(current_station, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(current_station, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
     lv_obj_set_style_border_width(current_station, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(current_station, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(current_station, 15, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(current_station, UI_SPACE_LG, LV_PART_MAIN);
     
     s_station_title = lv_label_create(current_station);
     lv_label_set_text(s_station_title, "No station");
-    lv_obj_set_style_text_font(s_station_title, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_station_title, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(s_station_title, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_station_title, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_align(s_station_title, LV_ALIGN_TOP_LEFT, 0, 0);
     
     s_station_info = lv_label_create(current_station);
     lv_label_set_text(s_station_info, "Tap a station to play");
-    lv_obj_set_style_text_font(s_station_info, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_station_info, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(s_station_info, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_station_info, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_align(s_station_info, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     
     // Error label (hidden by default)
     s_error_label = lv_label_create(current_station);
     lv_label_set_text(s_error_label, "");
-    lv_obj_set_style_text_font(s_error_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_error_label, lv_color_hex(0xFF0000), 0);
+    lv_obj_set_style_text_font(s_error_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_error_label, UI_COLOR_TEXT_ERROR, 0);
     lv_label_set_long_mode(s_error_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(s_error_label, LV_PCT(70));
     lv_obj_align(s_error_label, LV_ALIGN_BOTTOM_LEFT, 0, -25);
@@ -107,67 +113,50 @@ static void on_create(void) {
     // Retry button (hidden by default)
     s_retry_btn = lv_btn_create(current_station);
     lv_obj_set_size(s_retry_btn, 80, 30);
-    lv_obj_set_style_bg_color(s_retry_btn, lv_color_hex(0xFF4444), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_retry_btn, UI_COLOR_TEXT_ERROR, LV_PART_MAIN);
     lv_obj_set_style_radius(s_retry_btn, 5, LV_PART_MAIN);
     lv_obj_align(s_retry_btn, LV_ALIGN_BOTTOM_RIGHT, -10, -10);
     lv_obj_add_flag(s_retry_btn, LV_OBJ_FLAG_HIDDEN);
     lv_obj_t *retry_label = lv_label_create(s_retry_btn);
     lv_label_set_text(retry_label, "Retry");
-    lv_obj_set_style_text_font(retry_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(retry_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(retry_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(retry_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(retry_label);
     
     // Play/Pause control
     s_play_btn = lv_btn_create(current_station);
     lv_obj_set_size(s_play_btn, 50, 50);
-    lv_obj_set_style_bg_color(s_play_btn, lv_color_hex(0x5b7fff), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_play_btn, lv_color_hex(0x4a6fff), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(s_play_btn, UI_COLOR_PRIMARY, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_play_btn, UI_COLOR_PRIMARY_DARK, LV_PART_MAIN | LV_STATE_PRESSED);
     lv_obj_set_style_radius(s_play_btn, 25, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_play_btn, 0, LV_PART_MAIN);
     lv_obj_align(s_play_btn, LV_ALIGN_RIGHT_MID, -10, 0);
     s_play_label = ui_icon_create(s_play_btn, UI_ICON_PLAY, 20);
     if (s_play_label != NULL) {
-        lv_obj_set_style_text_color(s_play_label, lv_color_hex(0xFFFFFF), 0);  // White icon on blue button
+        lv_obj_set_style_text_color(s_play_label, UI_COLOR_TEXT_PRIMARY, 0);  // White icon on blue button
         lv_obj_center(s_play_label);
     }
     
-    // Station list (scrollable) - matching web demo
-    s_station_list = lv_obj_create(s_content);
+    // Station list (scrollable) - using shared component
+    s_station_list = ui_scrollable_list_create(s_content);
     lv_obj_set_size(s_station_list, LV_PCT(100), LV_PCT(100) - 100);
-    lv_obj_set_style_bg_opa(s_station_list, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_station_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_station_list, 0, LV_PART_MAIN);
-    lv_obj_set_flex_flow(s_station_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(s_station_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
-    // Create station list items
+    // Create station list items using shared component
     for (int i = 0; i < STATION_COUNT; i++) {
-        lv_obj_t *station_item = lv_obj_create(s_station_list);
-        lv_obj_set_size(station_item, LV_PCT(100), 50);
-        lv_obj_set_style_bg_color(station_item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(station_item, lv_color_hex(0x3a3a3a), LV_PART_MAIN | LV_STATE_PRESSED);
-        lv_obj_set_style_border_width(station_item, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(station_item, 10, LV_PART_MAIN);
-        lv_obj_set_style_radius(station_item, 5, LV_PART_MAIN);
-        
-        // Store station index in user data
-        lv_obj_set_user_data(station_item, (void *)(intptr_t)i);
-        
-        lv_obj_t *label = lv_label_create(station_item);
-        lv_label_set_text(label, get_station_name(i));
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
-        
-        // Add click handler
-        // Will be added after callback function is defined
+        ui_list_item_two_line_create(
+            s_station_list,
+            NULL,  // No icon
+            get_station_name(i),
+            NULL,  // No subtitle
+            NULL,  // No extra text
+            station_item_click_cb,
+            (void*)(intptr_t)i
+        );
     }
     
     #if SX_UI_VERIFY_MODE
     // Add touch probe for verification
     screen_common_add_touch_probe(container, "Radio Screen", SCREEN_ID_RADIO);
-    #endif
-    
     sx_ui_verify_on_create(SCREEN_ID_RADIO, "Radio", container, s_content);
     #endif
 }
@@ -244,19 +233,13 @@ static void on_show(void) {
     #endif
     
     // Add event handlers if not already added
-    if (s_play_btn != NULL && s_station_list != NULL) {
+    if (s_play_btn != NULL) {
         lv_obj_add_event_cb(s_play_btn, play_pause_btn_cb, LV_EVENT_CLICKED, NULL);
-        if (s_retry_btn != NULL) {
-            lv_obj_add_event_cb(s_retry_btn, retry_btn_cb, LV_EVENT_CLICKED, NULL);
-        }
-        
-        // Add click handlers for station items
-        uint32_t child_cnt = lv_obj_get_child_cnt(s_station_list);
-        for (uint32_t i = 0; i < child_cnt; i++) {
-            lv_obj_t *child = lv_obj_get_child(s_station_list, i);
-            lv_obj_add_event_cb(child, station_item_click_cb, LV_EVENT_CLICKED, NULL);
-        }
     }
+    if (s_retry_btn != NULL) {
+        lv_obj_add_event_cb(s_retry_btn, retry_btn_cb, LV_EVENT_CLICKED, NULL);
+    }
+    // Note: Station items already have event handlers from ui_list_item_two_line_create()
 }
 
 static void on_hide(void) {

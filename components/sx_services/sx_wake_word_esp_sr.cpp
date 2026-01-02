@@ -7,7 +7,7 @@
 #include <esp_err.h>
 #include "sx_wake_word_service.h"
 
-#ifdef CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE
+#if defined(CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE) || defined(CONFIG_SX_WAKE_WORD_ESP_SR)
 
 #include <esp_log.h>
 #include <string.h>
@@ -153,7 +153,7 @@ esp_err_t sx_wake_word_deinit_esp_sr(void) {
 
 } // extern "C"
 
-#else // CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE not defined
+#else // Wake word ESP-SR not enabled
 
 // Stub implementations when ESP-SR is not enabled
 // Ensure headers are available for stub functions
@@ -191,6 +191,6 @@ esp_err_t sx_wake_word_deinit_esp_sr(void) {
 
 } // extern "C"
 
-#endif // CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE
+#endif // Wake word ESP-SR enable
 
 

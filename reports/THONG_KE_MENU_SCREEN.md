@@ -208,3 +208,11 @@ Ngoài menu items, Home screen còn có:
 
 
 
+
+
+
+
+
+
+
+

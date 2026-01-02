@@ -3,8 +3,7 @@
 #include <esp_log.h>
 #include <string.h>
 #include <stdlib.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
 #include "ui_router.h"
 #include "sx_ui_verify.h"
 #include "screen_common.h"
@@ -13,6 +12,8 @@
 #include "sx_event.h"
 #include "sx_stt_service.h"
 #include "sx_tts_service.h"
+#include "ui_theme_tokens.h"
+#include "ui_list.h"
 
 static const char *TAG = "screen_chat";
 
@@ -84,71 +85,68 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Chat");
     
-    // Create message list (scrollable)
-    s_message_list = lv_obj_create(container);
+    // Create message list (scrollable) using shared component
+    s_message_list = ui_scrollable_list_create(container);
     lv_obj_set_size(s_message_list, LV_PCT(100), LV_PCT(100) - 100); // Leave space for top bar and input
     lv_obj_align(s_message_list, LV_ALIGN_TOP_LEFT, 0, 40);
-    lv_obj_set_style_bg_opa(s_message_list, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_message_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_message_list, 10, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_message_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_message_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Add welcome message
     lv_obj_t *welcome_msg = lv_label_create(s_message_list);
     lv_label_set_text(welcome_msg, "Start a conversation with the chatbot...");
-    lv_obj_set_style_text_font(welcome_msg, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(welcome_msg, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_pad_all(welcome_msg, 10, LV_PART_MAIN);
+    lv_obj_set_style_text_font(welcome_msg, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(welcome_msg, UI_COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_pad_all(welcome_msg, UI_SPACE_XL, LV_PART_MAIN);
     
     // Create status label in top bar area (below title)
     s_status_label = lv_label_create(container);
     lv_label_set_text(s_status_label, "● Disconnected");
-    lv_obj_set_style_text_font(s_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_status_label, lv_color_hex(0xff4444), 0);
+    lv_obj_set_style_text_font(s_status_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_status_label, UI_COLOR_TEXT_ERROR, 0);
     lv_obj_align(s_status_label, LV_ALIGN_TOP_RIGHT, -10, 25);
     
     // Create STT/TTS status labels (below status label)
     s_stt_status_label = lv_label_create(container);
     lv_label_set_text(s_stt_status_label, "STT: Ready");
-    lv_obj_set_style_text_font(s_stt_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_stt_status_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(s_stt_status_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_stt_status_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_align(s_stt_status_label, LV_ALIGN_TOP_LEFT, 10, 50);
     
     s_tts_status_label = lv_label_create(container);
     lv_label_set_text(s_tts_status_label, "TTS: Ready");
-    lv_obj_set_style_text_font(s_tts_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(s_tts_status_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_tts_status_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_align(s_tts_status_label, LV_ALIGN_TOP_LEFT, 10, 68);
 
     // Emotion indicator label (emoji/text based on chatbot emotion)
     s_emotion_label = lv_label_create(container);
     lv_label_set_text(s_emotion_label, "Emotion: 🙂");
-    lv_obj_set_style_text_font(s_emotion_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_emotion_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(s_emotion_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_emotion_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_align(s_emotion_label, LV_ALIGN_TOP_LEFT, 10, 86);
     
     // Create typing indicator (hidden by default)
     s_typing_indicator = lv_label_create(s_message_list);
     lv_label_set_text(s_typing_indicator, "🤖 Typing...");
-    lv_obj_set_style_text_font(s_typing_indicator, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_typing_indicator, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_pad_all(s_typing_indicator, 10, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_typing_indicator, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_typing_indicator, UI_COLOR_TEXT_SECONDARY, 0);
+    lv_obj_set_style_pad_all(s_typing_indicator, UI_SPACE_XL, LV_PART_MAIN);
     lv_obj_add_flag(s_typing_indicator, LV_OBJ_FLAG_HIDDEN);
     
     // Create input bar at bottom
     s_input_bar = lv_obj_create(container);
     lv_obj_set_size(s_input_bar, LV_PCT(100), 60);
     lv_obj_align(s_input_bar, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_bg_color(s_input_bar, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_input_bar, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_input_bar, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_input_bar, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_input_bar, UI_SPACE_SM, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_input_bar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(s_input_bar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     
@@ -157,14 +155,14 @@ static void on_create(void) {
     lv_obj_set_flex_grow(s_textarea, 1);
     lv_obj_set_size(s_textarea, LV_PCT(80), LV_PCT(100));
     lv_textarea_set_placeholder_text(s_textarea, "Type a message...");
-    lv_obj_set_style_text_font(s_textarea, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(s_textarea, UI_FONT_MEDIUM, 0);
     
     // Create send button
     s_send_btn = lv_btn_create(s_input_bar);
     lv_obj_set_size(s_send_btn, 50, LV_PCT(100));
     lv_obj_t *send_label = lv_label_create(s_send_btn);
     lv_label_set_text(send_label, "Send");
-    lv_obj_set_style_text_font(send_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(send_label, UI_FONT_MEDIUM, 0);
     lv_obj_center(send_label);
     lv_obj_add_event_cb(s_send_btn, send_btn_event_cb, LV_EVENT_CLICKED, NULL);
     
@@ -233,19 +231,19 @@ static void add_message_to_list_unlocked(const char *role, const char *content) 
     lv_obj_t *msg_bubble = lv_obj_create(msg_container);
     lv_obj_set_size(msg_bubble, LV_PCT(85), LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(msg_bubble, 
-        (role && strcmp(role, "user") == 0) ? lv_color_hex(0x5b7fff) : lv_color_hex(0x2a2a2a),
+        (role && strcmp(role, "user") == 0) ? UI_COLOR_PRIMARY : UI_COLOR_BG_SECONDARY,
         LV_PART_MAIN);
     lv_obj_set_style_border_width(msg_bubble, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(msg_bubble, 12, LV_PART_MAIN);
-    lv_obj_set_style_pad_left(msg_bubble, 15, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(msg_bubble, 15, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(msg_bubble, UI_SPACE_MD, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(msg_bubble, UI_SPACE_LG, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(msg_bubble, UI_SPACE_LG, LV_PART_MAIN);
     lv_obj_set_style_radius(msg_bubble, 15, LV_PART_MAIN);
     
     // Message text
     lv_obj_t *msg_label = lv_label_create(msg_bubble);
     lv_label_set_text(msg_label, content);
-    lv_obj_set_style_text_font(msg_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(msg_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(msg_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(msg_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_label_set_long_mode(msg_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(msg_label, LV_PCT(100));
     

@@ -10,8 +10,13 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Forward declarations for ESP-SR wrapper (if enabled)
-#ifdef CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE
+// Lưu ý: Kconfig hiện dùng CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE (theo sdkconfig)
+#if defined(CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE) || defined(CONFIG_SX_WAKE_WORD_ESP_SR)
 extern esp_err_t sx_wake_word_init_esp_sr(const sx_wake_word_config_t *config);
 extern esp_err_t sx_wake_word_feed_audio_esp_sr(const int16_t *pcm, size_t sample_count);
 extern esp_err_t sx_wake_word_register_callback_esp_sr(sx_wake_word_detected_cb_t callback, void *user_data);
@@ -57,7 +62,7 @@ static void sx_wake_word_task(void *arg) {
         if (s_audio_queue != NULL) {
             if (xQueueReceive(s_audio_queue, audio_buffer, pdMS_TO_TICKS(100)) == pdTRUE) {
                 // Process audio through wake word engine
-#ifdef CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE
+#if defined(CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE) || defined(CONFIG_SX_WAKE_WORD_ESP_SR)
                 sx_wake_word_feed_audio_esp_sr(audio_buffer, AUDIO_BUFFER_SAMPLES);
 #else
                 ESP_LOGW(TAG, "Wake word processing - ESP-SR not enabled");
@@ -113,7 +118,7 @@ esp_err_t sx_wake_word_service_init(const sx_wake_word_config_t *config) {
     if (s_config.threshold > 1.0f) s_config.threshold = 1.0f;
     
     // Initialize wake word engine
-#ifdef CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE
+#if defined(CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE) || defined(CONFIG_SX_WAKE_WORD_ESP_SR)
     if (s_config.type == SX_WAKE_WORD_TYPE_ESP_SR) {
         esp_err_t ret = sx_wake_word_init_esp_sr(&s_config);
         if (ret != ESP_OK) {
@@ -156,7 +161,7 @@ esp_err_t sx_wake_word_start(sx_wake_word_detected_cb_t callback, void *user_dat
     s_detected_callback = callback;
     s_user_data = user_data;
     
-#ifdef CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE
+#if defined(CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE) || defined(CONFIG_SX_WAKE_WORD_ESP_SR)
     // Register callback with ESP-SR wrapper
     esp_err_t ret = sx_wake_word_register_callback_esp_sr(callback, user_data);
     if (ret != ESP_OK) {
@@ -223,7 +228,7 @@ esp_err_t sx_wake_word_feed_audio(const int16_t *pcm, size_t sample_count) {
         }
     }
     
-#ifdef CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE
+#if defined(CONFIG_SX_WAKE_WORD_ESP_SR_ENABLE) || defined(CONFIG_SX_WAKE_WORD_ESP_SR)
     // Also feed directly to ESP-SR (if queue is not used)
     // This allows immediate processing without queue delay
     sx_wake_word_feed_audio_esp_sr(pcm, sample_count);
@@ -232,4 +237,7 @@ esp_err_t sx_wake_word_feed_audio(const int16_t *pcm, size_t sample_count) {
     return ESP_OK;
 }
 
+#ifdef __cplusplus
+}
+#endif
 

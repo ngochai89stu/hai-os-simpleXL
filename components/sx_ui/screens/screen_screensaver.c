@@ -1,11 +1,12 @@
 #include "screen_screensaver.h"
 
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
+#include "ui_theme_tokens.h"
 
 static const char *TAG = "screen_screensaver";
 
@@ -24,7 +25,7 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background (full screen, no top bar for screensaver)
+    // Set background (full screen, no top bar for screensaver) - keep black for screensaver
     lv_obj_set_style_bg_color(container, lv_color_hex(0x000000), LV_PART_MAIN);
     
     // Create content area (full screen)
@@ -39,15 +40,15 @@ static void on_create(void) {
     // Screensaver display (clock/image/animation)
     s_screensaver_display = lv_obj_create(s_content);
     lv_obj_set_size(s_screensaver_display, 200, 200);
-    lv_obj_set_style_bg_color(s_screensaver_display, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_screensaver_display, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_screensaver_display, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(s_screensaver_display, 10, LV_PART_MAIN);
     
     // Clock display (placeholder)
     lv_obj_t *clock_label = lv_label_create(s_screensaver_display);
     lv_label_set_text(clock_label, "12:00");
-    lv_obj_set_style_text_font(clock_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(clock_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(clock_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(clock_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(clock_label);
     
     // Verification: Log screen creation

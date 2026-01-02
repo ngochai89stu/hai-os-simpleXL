@@ -64,6 +64,10 @@ uint32_t sx_protocol_mqtt_get_server_frame_duration(void);
 // Check if audio channel (UDP) is opened
 bool sx_protocol_mqtt_is_audio_channel_opened(void);
 
+// Get base interface for protocol abstraction
+#include "sx_protocol_base.h"
+sx_protocol_base_t* sx_protocol_mqtt_get_base(void);
+
 #ifdef __cplusplus
 }
 #endif

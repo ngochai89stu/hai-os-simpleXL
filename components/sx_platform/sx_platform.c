@@ -22,7 +22,26 @@
 // GPIO mapping từ Kconfig
 #define LCD_HOST_ID         SPI3_HOST
 
-// LCD pins từ Kconfig
+// LCD pins từ Kconfig (với giá trị mặc định nếu chưa được định nghĩa)
+#ifndef CONFIG_HAI_LCD_PIN_MOSI
+#define CONFIG_HAI_LCD_PIN_MOSI 47
+#endif
+#ifndef CONFIG_HAI_LCD_PIN_CLK
+#define CONFIG_HAI_LCD_PIN_CLK 21
+#endif
+#ifndef CONFIG_HAI_LCD_PIN_CS
+#define CONFIG_HAI_LCD_PIN_CS 41
+#endif
+#ifndef CONFIG_HAI_LCD_PIN_DC
+#define CONFIG_HAI_LCD_PIN_DC 40
+#endif
+#ifndef CONFIG_HAI_LCD_PIN_RST
+#define CONFIG_HAI_LCD_PIN_RST 45
+#endif
+#ifndef CONFIG_HAI_LCD_PIN_BK_LIGHT
+#define CONFIG_HAI_LCD_PIN_BK_LIGHT 42
+#endif
+
 #define LCD_PIN_NUM_MOSI    CONFIG_HAI_LCD_PIN_MOSI
 #define LCD_PIN_NUM_CLK     CONFIG_HAI_LCD_PIN_CLK
 #define LCD_PIN_NUM_CS      CONFIG_HAI_LCD_PIN_CS
@@ -30,7 +49,23 @@
 #define LCD_PIN_NUM_RST     CONFIG_HAI_LCD_PIN_RST
 #define LCD_PIN_NUM_BK_LIGHT CONFIG_HAI_LCD_PIN_BK_LIGHT
 
-// CTP (Capacitive Touch Panel) GPIO mapping từ Kconfig
+// CTP (Capacitive Touch Panel) GPIO mapping từ Kconfig (với giá trị mặc định)
+#ifndef CONFIG_HAI_TOUCH_ENABLE
+#define CONFIG_HAI_TOUCH_ENABLE 1
+#endif
+#ifndef CONFIG_HAI_TOUCH_PIN_SDA
+#define CONFIG_HAI_TOUCH_PIN_SDA 8
+#endif
+#ifndef CONFIG_HAI_TOUCH_PIN_SCL
+#define CONFIG_HAI_TOUCH_PIN_SCL 11
+#endif
+#ifndef CONFIG_HAI_TOUCH_PIN_RST
+#define CONFIG_HAI_TOUCH_PIN_RST 9
+#endif
+#ifndef CONFIG_HAI_TOUCH_PIN_INT
+#define CONFIG_HAI_TOUCH_PIN_INT 13
+#endif
+
 #if CONFIG_HAI_TOUCH_ENABLE
 #define CTP_I2C_SDA_GPIO    CONFIG_HAI_TOUCH_PIN_SDA
 #define CTP_I2C_SCL_GPIO    CONFIG_HAI_TOUCH_PIN_SCL
@@ -318,6 +353,15 @@ esp_err_t sx_platform_set_brightness(uint8_t percent) {
 
 uint8_t sx_platform_get_brightness(void) {
     return s_current_brightness;
+}
+
+esp_err_t sx_platform_get_screen_size(uint16_t *width, uint16_t *height) {
+    if (width == NULL || height == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *width = LCD_H_RES;
+    *height = LCD_V_RES;
+    return ESP_OK;
 }
 
 // Static I2C bus handle for touch controller

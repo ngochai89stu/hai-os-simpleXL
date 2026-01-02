@@ -3,8 +3,8 @@
 #include <esp_log.h>
 #include <inttypes.h>
 #include <string.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
@@ -12,6 +12,7 @@
 #include "sx_navigation_ble.h"
 #include "sx_settings_service.h"
 #include "sx_tts_service.h"
+#include "ui_theme_tokens.h"
 
 static const char *TAG = "screen_google_navigation";
 
@@ -43,7 +44,6 @@ static lv_obj_t *s_container = NULL;
 static lv_timer_t *s_nav_timer = NULL;
 static lv_img_dsc_t s_icon_img_desc = {0};
 static uint8_t s_icon_bitmap_buffer[SX_NAV_ICON_SIZE] = {0};
-static bool s_overspeed_active = false;
 static lv_timer_t *s_overspeed_timer = NULL;
 static bool s_last_overspeed_state = false;
 
@@ -54,29 +54,23 @@ static void update_connection_status(void);
 static lv_obj_t* create_card(lv_obj_t *parent, int32_t width, int32_t height);
 static void apply_card_style(lv_obj_t *card);
 
-// Color scheme (modern app-like)
-#define COLOR_BG_DARK       0x121212
-#define COLOR_CARD_DARK     0x1E1E1E
-#define COLOR_CARD_LIGHT    0x2A2A2A
-#define COLOR_PRIMARY       0x4285F4  // Google Blue
+// Color scheme - using tokens (keep Google-specific colors as defines for now)
+#define COLOR_PRIMARY       0x4285F4  // Google Blue (keep for navigation-specific use)
 #define COLOR_ACCENT        0x34A853  // Google Green
 #define COLOR_WARNING        0xFBBC04  // Google Yellow
 #define COLOR_ERROR          0xEA4335  // Google Red
-#define COLOR_TEXT_PRIMARY   0xFFFFFF
-#define COLOR_TEXT_SECONDARY 0xB0B0B0
-#define COLOR_TEXT_TERTIARY  0x808080
 
-// Optimized spacing for 320x480 screen
-#define PADDING_SMALL  8
-#define PADDING_MEDIUM 12
-#define PADDING_LARGE  16
-#define GAP_SMALL      6
-#define GAP_MEDIUM     10
-#define GAP_LARGE      12
+// Optimized spacing - using tokens
+#define PADDING_SMALL  UI_SPACE_SM
+#define PADDING_MEDIUM UI_SPACE_MD
+#define PADDING_LARGE  UI_SPACE_LG
+#define GAP_SMALL      UI_SPACE_SM
+#define GAP_MEDIUM     UI_SPACE_MD
+#define GAP_LARGE      UI_SPACE_LG
 
-// Apply modern card style
+// Apply modern card style using tokens
 static void apply_card_style(lv_obj_t *card) {
-    lv_obj_set_style_bg_color(card, lv_color_hex(COLOR_CARD_DARK), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(card, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_radius(card, 12, LV_PART_MAIN);  // Smaller radius for small screen
     lv_obj_set_style_border_width(card, 0, LV_PART_MAIN);
@@ -156,7 +150,7 @@ static void nav_timer_cb(lv_timer_t *timer)
     if (s_next_road_desc_label) {
         if (instr.next_road_desc[0] != '\0') {
             lv_label_set_text(s_next_road_desc_label, instr.next_road_desc);
-            lv_obj_set_style_text_color(s_next_road_desc_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+            lv_obj_set_style_text_color(s_next_road_desc_label, UI_COLOR_TEXT_SECONDARY, 0);
         } else {
             lv_label_set_text(s_next_road_desc_label, "");
         }
@@ -240,7 +234,7 @@ static void nav_timer_cb(lv_timer_t *timer)
         } else {
             lv_label_set_text(s_speed_value_label, "--");
             lv_label_set_text(s_speed_unit_label, "");
-            lv_obj_set_style_text_color(s_speed_value_label, lv_color_hex(COLOR_TEXT_TERTIARY), 0);
+            lv_obj_set_style_text_color(s_speed_value_label, UI_COLOR_TEXT_SECONDARY, 0);
             s_last_overspeed_state = false;
         }
     }
@@ -277,8 +271,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Modern dark background
-    lv_obj_set_style_bg_color(container, lv_color_hex(COLOR_BG_DARK), LV_PART_MAIN);
+    // Modern dark background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(container, LV_OPA_COVER, LV_PART_MAIN);
     
     // Top bar
@@ -306,8 +300,8 @@ static void on_create(void) {
     // Speed value (larger font, centered)
     s_speed_value_label = lv_label_create(s_speed_card);
     lv_label_set_text(s_speed_value_label, "--");
-    lv_obj_set_style_text_font(s_speed_value_label, &lv_font_montserrat_14, 0);  // Largest available
-    lv_obj_set_style_text_color(s_speed_value_label, lv_color_hex(COLOR_ACCENT), 0);
+    lv_obj_set_style_text_font(s_speed_value_label, UI_FONT_MEDIUM, 0);  // Largest available
+    lv_obj_set_style_text_color(s_speed_value_label, lv_color_hex(COLOR_ACCENT), 0);  // Keep Google Green
     lv_obj_set_style_text_align(s_speed_value_label, LV_TEXT_ALIGN_CENTER, 0);
     // Make text appear larger by using scale (if supported) or bold
     lv_obj_set_style_text_letter_space(s_speed_value_label, 1, 0);
@@ -315,8 +309,8 @@ static void on_create(void) {
     // Speed unit (smaller)
     s_speed_unit_label = lv_label_create(s_speed_card);
     lv_label_set_text(s_speed_unit_label, "");
-    lv_obj_set_style_text_font(s_speed_unit_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_speed_unit_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(s_speed_unit_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_speed_unit_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_style_text_align(s_speed_unit_label, LV_TEXT_ALIGN_CENTER, 0);
     
     // Map/Icon Card (compact for small screen)
@@ -333,8 +327,8 @@ static void on_create(void) {
     // Placeholder icon
     lv_obj_t *map_icon = lv_label_create(s_map_card);
     lv_label_set_text(map_icon, "🗺️");
-    lv_obj_set_style_text_font(map_icon, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(map_icon, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(map_icon, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(map_icon, UI_COLOR_TEXT_SECONDARY, 0);
     
     // Instruction Card (main content) - Compact
     s_instruction_card = create_card(s_content, LV_PCT(100), LV_SIZE_CONTENT);
@@ -346,8 +340,8 @@ static void on_create(void) {
     // Next Road (prominent, but compact)
     s_next_road_label = lv_label_create(s_instruction_card);
     lv_label_set_text(s_next_road_label, "");
-    lv_obj_set_style_text_font(s_next_road_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_next_road_label, lv_color_hex(COLOR_PRIMARY), 0);
+    lv_obj_set_style_text_font(s_next_road_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_next_road_label, lv_color_hex(COLOR_PRIMARY), 0);  // Keep Google Blue
     lv_label_set_long_mode(s_next_road_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(s_next_road_label, LV_PCT(100));
     lv_obj_set_style_text_align(s_next_road_label, LV_TEXT_ALIGN_LEFT, 0);
@@ -355,16 +349,16 @@ static void on_create(void) {
     // Next Road Description
     s_next_road_desc_label = lv_label_create(s_instruction_card);
     lv_label_set_text(s_next_road_desc_label, "");
-    lv_obj_set_style_text_font(s_next_road_desc_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_next_road_desc_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(s_next_road_desc_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_next_road_desc_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_label_set_long_mode(s_next_road_desc_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(s_next_road_desc_label, LV_PCT(100));
     
     // Instruction text
     s_instruction_label = lv_label_create(s_instruction_card);
     lv_label_set_text(s_instruction_label, "Chưa có điều hướng");
-    lv_obj_set_style_text_font(s_instruction_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_instruction_label, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(s_instruction_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_instruction_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_label_set_long_mode(s_instruction_label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(s_instruction_label, LV_PCT(100));
     
@@ -386,13 +380,13 @@ static void on_create(void) {
     
     s_ete_label = lv_label_create(eta_row);
     lv_label_set_text(s_ete_label, "ETE: --");
-    lv_obj_set_style_text_font(s_ete_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_ete_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(s_ete_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_ete_label, UI_COLOR_TEXT_SECONDARY, 0);
     
     s_total_dist_label = lv_label_create(eta_row);
     lv_label_set_text(s_total_dist_label, "Tổng: --");
-    lv_obj_set_style_text_font(s_total_dist_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_total_dist_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(s_total_dist_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_total_dist_label, UI_COLOR_TEXT_SECONDARY, 0);
     
     // Distance and Time row (compact)
     lv_obj_t *dist_time_row = lv_obj_create(s_info_card);
@@ -405,13 +399,13 @@ static void on_create(void) {
     
     s_distance_label = lv_label_create(dist_time_row);
     lv_label_set_text(s_distance_label, "--");
-    lv_obj_set_style_text_font(s_distance_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_distance_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(s_distance_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_distance_label, UI_COLOR_TEXT_SECONDARY, 0);
     
     s_time_label = lv_label_create(dist_time_row);
     lv_label_set_text(s_time_label, "--");
-    lv_obj_set_style_text_font(s_time_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_time_label, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(s_time_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_time_label, UI_COLOR_TEXT_SECONDARY, 0);
     
     // Connection badge (bottom right, compact)
     s_connection_badge = lv_obj_create(s_content);
@@ -426,8 +420,8 @@ static void on_create(void) {
     
     lv_obj_t *conn_label = lv_label_create(s_connection_badge);
     lv_label_set_text(conn_label, "Ngắt kết nối");
-    lv_obj_set_style_text_font(conn_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(conn_label, lv_color_hex(COLOR_TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(conn_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(conn_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(conn_label);
     
     // Create update timer
@@ -497,7 +491,7 @@ static void overspeed_flash_cb(lv_timer_t *timer) {
         if (flash_state) {
             lv_obj_set_style_bg_color(s_speed_card, lv_color_hex(COLOR_ERROR), LV_PART_MAIN);
         } else {
-            lv_obj_set_style_bg_color(s_speed_card, lv_color_hex(COLOR_CARD_DARK), LV_PART_MAIN);
+            lv_obj_set_style_bg_color(s_speed_card, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
         }
     }
 }

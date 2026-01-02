@@ -146,3 +146,11 @@
 
 *Cập nhật lần cuối: Sau khi hoàn thành board config và LCD support*
 
+
+
+
+
+
+
+
+

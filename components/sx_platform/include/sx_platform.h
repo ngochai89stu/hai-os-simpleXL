@@ -33,6 +33,10 @@ esp_err_t sx_platform_set_brightness(uint8_t percent);
 // Get current brightness (0-100 percent)
 uint8_t sx_platform_get_brightness(void);
 
+// Get screen dimensions (width and height in pixels)
+// Returns ESP_OK on success
+esp_err_t sx_platform_get_screen_size(uint16_t *width, uint16_t *height);
+
 #ifdef __cplusplus
 }
 #endif

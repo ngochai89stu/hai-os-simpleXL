@@ -355,3 +355,11 @@ static const uint16_t (* spectrum)[4];
 
 *Phân tích này dựa trên ước tính. Nên test thực tế để có số liệu chính xác.*
 
+
+
+
+
+
+
+
+

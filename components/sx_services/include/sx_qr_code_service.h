@@ -20,7 +20,7 @@ typedef struct {
 } sx_qr_code_config_t;
 
 // QR code result
-typedef struct {
+typedef struct sx_qr_code_result {
     uint16_t width;         // QR code width in pixels
     uint16_t height;        // QR code height in pixels
     uint8_t *data;          // QR code bitmap data (1 bit per pixel, row-major)
@@ -45,25 +45,9 @@ esp_err_t sx_qr_code_generate_ip(const char *ip_address, uint16_t port, sx_qr_co
 // Free QR code result
 void sx_qr_code_free_result(sx_qr_code_result_t *result);
 
-// Create LVGL QR code widget from text
-// parent: Parent LVGL object
-// text: Text to encode in QR code
-// size: QR code size in pixels
-// Returns: LVGL QR code widget object, or NULL on error
-// Note: Caller must delete the widget when done
-// Note: Requires LVGL to be included before this header
-#ifdef __cplusplus
-}
-#endif
-
-// Forward declaration for LVGL object
-typedef struct _lv_obj_t lv_obj_t;
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-lv_obj_t* sx_qr_code_create_lvgl_widget(lv_obj_t *parent, const char *text, uint16_t size);
+// P0.1: sx_qr_code_create_lvgl_widget() removed - moved to UI helper
+// UI task should create LVGL QR code widgets directly using sx_lvgl.h
+// Service only provides QR code data via sx_qr_code_generate(), UI handles LVGL operations
 
 #ifdef __cplusplus
 }

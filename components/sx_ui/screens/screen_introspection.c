@@ -1,11 +1,13 @@
 #include "screen_introspection.h"
 
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
+#include "ui_theme_tokens.h"
+#include "ui_list.h"
 
 static const char *TAG = "screen_introspection";
 
@@ -26,8 +28,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Introspection");
@@ -38,31 +40,27 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Refresh button
     s_refresh_btn = lv_btn_create(s_content);
-    lv_obj_set_size(s_refresh_btn, LV_PCT(100), 50);
-    lv_obj_set_style_bg_color(s_refresh_btn, lv_color_hex(0x5b7fff), LV_PART_MAIN);
+    lv_obj_set_size(s_refresh_btn, LV_PCT(100), UI_SIZE_BUTTON_HEIGHT);
+    lv_obj_set_style_bg_color(s_refresh_btn, UI_COLOR_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_radius(s_refresh_btn, 5, LV_PART_MAIN);
     lv_obj_t *refresh_label = lv_label_create(s_refresh_btn);
     lv_label_set_text(refresh_label, "Refresh State");
-    lv_obj_set_style_text_font(refresh_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(refresh_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(refresh_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(refresh_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(refresh_label);
     
-    // Runtime state list (scrollable)
-    s_state_list = lv_obj_create(s_content);
+    // Runtime state list (scrollable) - using shared component
+    s_state_list = ui_scrollable_list_create(s_content);
     lv_obj_set_size(s_state_list, LV_PCT(100), LV_PCT(100) - 70);
-    lv_obj_set_style_bg_opa(s_state_list, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_state_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_state_list, 0, LV_PART_MAIN);
-    lv_obj_set_flex_flow(s_state_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(s_state_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
-    // Runtime state items (placeholder - will be populated from system)
+    // Runtime state items (placeholder - will be populated from system) - using shared component
     const char* state_items[] = {
         "Current Screen: Home",
         "Services: 8 active",
@@ -72,18 +70,15 @@ static void on_create(void) {
         "Registry: 29 screens"
     };
     for (int i = 0; i < 6; i++) {
-        lv_obj_t *state_item = lv_obj_create(s_state_list);
-        lv_obj_set_size(state_item, LV_PCT(100), 40);
-        lv_obj_set_style_bg_color(state_item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-        lv_obj_set_style_border_width(state_item, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(state_item, 10, LV_PART_MAIN);
-        lv_obj_set_style_radius(state_item, 5, LV_PART_MAIN);
-        
-        lv_obj_t *label = lv_label_create(state_item);
-        lv_label_set_text(label, state_items[i]);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
+        ui_list_item_two_line_create(
+            s_state_list,
+            NULL,  // No icon
+            state_items[i],
+            NULL,  // No subtitle
+            NULL,  // No extra text
+            NULL,  // No callback (read-only)
+            NULL
+        );
     }
     
     // Verification: Log screen creation

@@ -3,14 +3,16 @@
 #include <esp_log.h>
 #include <string.h>
 #include <time.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "sx_ui_verify.h"
 #include "sx_weather_service.h"
 #include "sx_settings_service.h"
 #include "sx_image_service.h"
-#include "sx_assets.h"
+#include "ui_image_helpers.h"
+#include "ui_assets_wrapper.h"  // Wrapper để access assets (tuân theo SIMPLEXL_ARCH v1.3)
+#include "ui_theme_tokens.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/timers.h>
@@ -112,14 +114,14 @@ static void load_background_image(void) {
     if (s_container != NULL) {
         // First, try to use embedded flashscreen image (default)
         if (strcmp(bg_setting, "Embedded") == 0 || strcmp(bg_setting, "Default") == 0) {
-            const lv_img_dsc_t *flashscreen_img = sx_assets_get_flashscreen_img();
+            const lv_img_dsc_t *flashscreen_img = ui_assets_get_flashscreen_img();
             if (flashscreen_img != NULL && flashscreen_img->data_size > 2) {  // Check if not placeholder
                 ESP_LOGI(TAG, "Using embedded flashscreen image: %dx%d, size=%zu", 
                          flashscreen_img->header.w, flashscreen_img->header.h, flashscreen_img->data_size);
                 
                 // Clean up previous SD card image if exists
                 if (s_current_bg_img != NULL) {
-                    sx_image_free_lvgl(s_current_bg_img);
+                    sx_ui_image_free_lvgl(s_current_bg_img);
                     s_current_bg_img = NULL;
                 }
                 
@@ -180,7 +182,7 @@ static void load_background_image(void) {
                 
                 if (is_rgb565) {
                     // Create LVGL image descriptor from RGB565 data
-                    sx_lvgl_image_t *lvgl_img = sx_image_create_lvgl_rgb565(img_data, img_info.width, img_info.height);
+                    sx_lvgl_image_t *lvgl_img = sx_ui_image_create_lvgl_rgb565(img_data, img_info.width, img_info.height);
                     
                     if (lvgl_img != NULL && lvgl_img->img_dsc != NULL) {
                         // Create or update background image object
@@ -196,7 +198,7 @@ static void load_background_image(void) {
                         
                         // Store LVGL image pointer for cleanup
                         if (s_current_bg_img != NULL) {
-                            sx_image_free_lvgl(s_current_bg_img);
+                            sx_ui_image_free_lvgl(s_current_bg_img);
                         }
                         s_current_bg_img = lvgl_img;
                         
@@ -228,7 +230,7 @@ static void load_background_image(void) {
             }
         } else {
             // Default to embedded flashscreen image, fallback to gradient
-            const lv_img_dsc_t *flashscreen_img = sx_assets_get_flashscreen_img();
+            const lv_img_dsc_t *flashscreen_img = ui_assets_get_flashscreen_img();
             if (flashscreen_img != NULL && flashscreen_img->data_size > 2) {  // Check if not placeholder
                 ESP_LOGI(TAG, "Using embedded flashscreen image as default: %dx%d, size=%zu", 
                          flashscreen_img->header.w, flashscreen_img->header.h, flashscreen_img->data_size);
@@ -309,46 +311,46 @@ static void on_create(void) {
     // Clock display (large, top center) - phone-style
     s_clock_label = lv_label_create(container);
     lv_label_set_text(s_clock_label, "00:00");
-    lv_obj_set_style_text_font(s_clock_label, &lv_font_montserrat_14, 0);  // Large font
-    lv_obj_set_style_text_color(s_clock_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(s_clock_label, UI_FONT_MEDIUM, 0);  // Large font
+    lv_obj_set_style_text_color(s_clock_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_align(s_clock_label, LV_ALIGN_TOP_MID, 0, 60);
     
     // Date display (below clock)
     s_date_label = lv_label_create(container);
     lv_label_set_text(s_date_label, "Mon, 01/01/2024");
-    lv_obj_set_style_text_font(s_date_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_date_label, lv_color_hex(0xCCCCCC), 0);
+    lv_obj_set_style_text_font(s_date_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_date_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_align(s_date_label, LV_ALIGN_TOP_MID, 0, 140);
     
     // Weather widget (bottom center, phone-style)
     s_weather_widget = lv_obj_create(container);
     lv_obj_set_size(s_weather_widget, LV_PCT(90), 100);
     lv_obj_align(s_weather_widget, LV_ALIGN_BOTTOM_MID, 0, -40);
-    lv_obj_set_style_bg_color(s_weather_widget, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_weather_widget, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_bg_opa(s_weather_widget, LV_OPA_80, LV_PART_MAIN);  // Semi-transparent
     lv_obj_set_style_border_width(s_weather_widget, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(s_weather_widget, 15, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_weather_widget, 15, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_weather_widget, UI_SPACE_LG, LV_PART_MAIN);
     
     // City label (top left)
     s_weather_city_label = lv_label_create(s_weather_widget);
     lv_label_set_text(s_weather_city_label, "Loading...");
-    lv_obj_set_style_text_font(s_weather_city_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_weather_city_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(s_weather_city_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_weather_city_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_align(s_weather_city_label, LV_ALIGN_TOP_LEFT, 0, 0);
     
     // Temperature label (large, center)
     s_weather_temp_label = lv_label_create(s_weather_widget);
     lv_label_set_text(s_weather_temp_label, "--°C");
-    lv_obj_set_style_text_font(s_weather_temp_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_weather_temp_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(s_weather_temp_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_weather_temp_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_align(s_weather_temp_label, LV_ALIGN_CENTER, 0, -10);
     
     // Description label (bottom center)
     s_weather_desc_label = lv_label_create(s_weather_widget);
     lv_label_set_text(s_weather_desc_label, "");
-    lv_obj_set_style_text_font(s_weather_desc_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_weather_desc_label, lv_color_hex(0xCCCCCC), 0);
+    lv_obj_set_style_text_font(s_weather_desc_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_weather_desc_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_align(s_weather_desc_label, LV_ALIGN_BOTTOM_MID, 0, -5);
     
     // Swipe hint (bottom, subtle)

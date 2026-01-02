@@ -8,12 +8,15 @@
 
 #include "sx_dispatcher.h"
 #include "sx_event.h"
+#include "sx_event_string_pool.h"
 #include "sx_radio_service.h"
 #include "sx_intent_service.h"
 #include "sx_mcp_server.h"
 #include "sx_mcp_tools.h"
 #include "sx_protocol_ws.h"
 #include "sx_protocol_mqtt.h"
+#include "sx_protocol_base.h"
+#include "sx_protocol_factory.h"
 #include <cJSON.h>
 
 static const char *TAG = "sx_chatbot";
@@ -35,6 +38,19 @@ typedef struct {
 
 static void sx_chatbot_task(void *arg);
 
+// Helper function to get current protocol base interface
+// Phase 1: Migrate to use protocol factory
+static sx_protocol_base_t* sx_chatbot_get_protocol_base(void) {
+    // Use factory for auto-detection
+    sx_protocol_base_t *protocol = sx_protocol_factory_get_current();
+    if (protocol && protocol->ops && protocol->ops->is_connected) {
+        if (protocol->ops->is_connected(protocol)) {
+            return protocol;
+        }
+    }
+    return NULL;
+}
+
 esp_err_t sx_chatbot_service_init(const sx_chatbot_config_t *cfg) {
     if (s_initialized) {
         return ESP_OK;
@@ -43,19 +59,10 @@ esp_err_t sx_chatbot_service_init(const sx_chatbot_config_t *cfg) {
         s_cfg = *cfg;
     }
     
-    // Initialize MCP server
-    esp_err_t ret = sx_mcp_server_init();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize MCP server");
-        return ret;
-    }
+    // Phase 1: Initialize protocol factory
+    sx_protocol_factory_init();
     
-    // Register MCP tools
-    ret = sx_mcp_tools_register_all();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to register MCP tools");
-        return ret;
-    }
+    // MCP server is initialized in bootstrap now
     
     // Create message queue
     s_message_queue = xQueueCreate(CHATBOT_QUEUE_SIZE, sizeof(chatbot_message_t));
@@ -228,40 +235,24 @@ static void sx_chatbot_task(void *arg) {
                     ESP_LOGE(TAG, "Failed to start radio stream: %s", esp_err_to_name(ret));
                 }
             } else {
-                // Phase 5: Send to protocol layer (WebSocket or MQTT)
-                if (s_protocol_ws_available && sx_protocol_ws_is_connected()) {
-                    // Build JSON message
+                // Phase 1: Migrate to use protocol base interface (eliminate duplicate code)
+                sx_protocol_base_t *protocol = sx_chatbot_get_protocol_base();
+                if (protocol && protocol->ops && protocol->ops->is_connected && protocol->ops->is_connected(protocol)) {
+                    // Build JSON message (common code, no duplication)
                     cJSON *json = cJSON_CreateObject();
                     cJSON_AddStringToObject(json, "type", "user_message");
                     cJSON_AddStringToObject(json, "text", msg.text);
                     
                     char *json_str = cJSON_PrintUnformatted(json);
-                    if (json_str) {
-                        esp_err_t ret = sx_protocol_ws_send_text(json_str);
+                    if (json_str && protocol->ops->send_text) {
+                        esp_err_t ret = protocol->ops->send_text(protocol, json_str);
                         if (ret == ESP_OK) {
-                            ESP_LOGI(TAG, "Message sent via WebSocket: %s", msg.text);
+                            ESP_LOGI(TAG, "Message sent via protocol: %s", msg.text);
                         } else {
-                            ESP_LOGW(TAG, "Failed to send message via WebSocket");
+                            ESP_LOGW(TAG, "Failed to send message via protocol: %s", esp_err_to_name(ret));
                         }
                         free(json_str);
-                    }
-                    cJSON_Delete(json);
-                } else if (s_protocol_mqtt_available && sx_protocol_mqtt_is_connected()) {
-                    // Build JSON message
-                    cJSON *json = cJSON_CreateObject();
-                    cJSON_AddStringToObject(json, "type", "user_message");
-                    cJSON_AddStringToObject(json, "text", msg.text);
-                    
-                    char *json_str = cJSON_PrintUnformatted(json);
-                    if (json_str) {
-                        // Use topic prefix from config or default
-                        const char *topic = s_cfg.publish_topic ? s_cfg.publish_topic : "chatbot/message";
-                        esp_err_t ret = sx_protocol_mqtt_publish(topic, json_str, strlen(json_str), 1, false);
-                        if (ret == ESP_OK) {
-                            ESP_LOGI(TAG, "Message sent via MQTT: %s", msg.text);
-                        } else {
-                            ESP_LOGW(TAG, "Failed to send message via MQTT");
-                        }
+                    } else if (json_str) {
                         free(json_str);
                     }
                     cJSON_Delete(json);
@@ -428,6 +419,63 @@ bool sx_chatbot_handle_json_message(cJSON *root, const char *raw_fallback) {
         return true;
     }
 
+    // System commands
+    if (strcmp(msg_type, "system") == 0) {
+        cJSON *command = cJSON_GetObjectItem(root, "command");
+        if (cJSON_IsString(command)) {
+            if (strcmp(command->valuestring, "reboot") == 0) {
+                sx_event_t evt = {
+                    .type = SX_EVT_SYSTEM_REBOOT,
+                    .arg0 = 0,
+                    .ptr = NULL,
+                };
+                sx_dispatcher_post_event(&evt);
+            } else {
+                // Generic system command
+                sx_event_t evt = {
+                    .type = SX_EVT_SYSTEM_COMMAND,
+                    .arg0 = 0,
+                    .ptr = sx_event_alloc_string(command->valuestring),
+                };
+                sx_dispatcher_post_event(&evt);
+            }
+        }
+        return true;
+    }
+
+    // Alert messages
+    if (strcmp(msg_type, "alert") == 0) {
+        cJSON *status = cJSON_GetObjectItem(root, "status");
+        cJSON *message = cJSON_GetObjectItem(root, "message");
+        cJSON *emotion = cJSON_GetObjectItem(root, "emotion");
+        
+        if (cJSON_IsString(status) && cJSON_IsString(message) && cJSON_IsString(emotion)) {
+            typedef struct {
+                char status[64];
+                char message[256];
+                char emotion[32];
+            } alert_data_t;
+            
+            alert_data_t *alert = (alert_data_t *)malloc(sizeof(alert_data_t));
+            if (alert) {
+                strncpy(alert->status, status->valuestring, sizeof(alert->status) - 1);
+                alert->status[sizeof(alert->status) - 1] = '\0';
+                strncpy(alert->message, message->valuestring, sizeof(alert->message) - 1);
+                alert->message[sizeof(alert->message) - 1] = '\0';
+                strncpy(alert->emotion, emotion->valuestring, sizeof(alert->emotion) - 1);
+                alert->emotion[sizeof(alert->emotion) - 1] = '\0';
+                
+                sx_event_t evt = {
+                    .type = SX_EVT_ALERT,
+                    .arg0 = 0,
+                    .ptr = alert,
+                };
+                sx_dispatcher_post_event(&evt);
+            }
+        }
+        return true;
+    }
+
     // Các type khác (hello, goodbye, ...) sẽ do protocol layer xử lý
     return false;
 }
@@ -440,38 +488,13 @@ esp_err_t sx_chatbot_handle_mcp_message(const char *message) {
     // Parse and handle MCP message
     char *response = sx_mcp_server_parse_message(message);
     if (response != NULL) {
-        // Send response via protocol layer
-        if (s_protocol_ws_available && sx_protocol_ws_is_connected()) {
-            // Build MCP message wrapper
-            cJSON *mcp_msg = cJSON_CreateObject();
-            cJSON_AddStringToObject(mcp_msg, "type", "mcp");
-            cJSON_AddStringToObject(mcp_msg, "payload", response);
-            
-            char *json_str = cJSON_PrintUnformatted(mcp_msg);
-            if (json_str) {
-                esp_err_t ret = sx_protocol_ws_send_text(json_str);
-                if (ret != ESP_OK) {
-                    ESP_LOGW(TAG, "Failed to send MCP response via WebSocket");
-                }
-                free(json_str);
+        // Use protocol base interface to send MCP message
+        sx_protocol_base_t *protocol = sx_chatbot_get_protocol_base();
+        if (protocol != NULL) {
+            esp_err_t ret = SX_PROTOCOL_SEND_MCP_MESSAGE(protocol, response);
+            if (ret != ESP_OK) {
+                ESP_LOGW(TAG, "Failed to send MCP response via protocol");
             }
-            cJSON_Delete(mcp_msg);
-        } else if (s_protocol_mqtt_available && sx_protocol_mqtt_is_connected()) {
-            // Build MCP message wrapper
-            cJSON *mcp_msg = cJSON_CreateObject();
-            cJSON_AddStringToObject(mcp_msg, "type", "mcp");
-            cJSON_AddStringToObject(mcp_msg, "payload", response);
-            
-            char *json_str = cJSON_PrintUnformatted(mcp_msg);
-            if (json_str) {
-                const char *topic = s_cfg.publish_topic ? s_cfg.publish_topic : "chatbot/message";
-                esp_err_t ret = sx_protocol_mqtt_publish(topic, json_str, strlen(json_str), 1, false);
-                if (ret != ESP_OK) {
-                    ESP_LOGW(TAG, "Failed to send MCP response via MQTT");
-                }
-                free(json_str);
-            }
-            cJSON_Delete(mcp_msg);
         } else {
             ESP_LOGW(TAG, "No protocol available, MCP response not sent");
         }
@@ -479,5 +502,99 @@ esp_err_t sx_chatbot_handle_mcp_message(const char *message) {
     }
     
     return ESP_OK;
+}
+
+// Audio channel control (from reference repo)
+esp_err_t sx_chatbot_open_audio_channel(void) {
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    sx_protocol_base_t *protocol = sx_chatbot_get_protocol_base();
+    if (protocol == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    return SX_PROTOCOL_OPEN_AUDIO_CHANNEL(protocol);
+}
+
+esp_err_t sx_chatbot_close_audio_channel(void) {
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    sx_protocol_base_t *protocol = sx_chatbot_get_protocol_base();
+    if (protocol == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    SX_PROTOCOL_CLOSE_AUDIO_CHANNEL(protocol);
+    return ESP_OK;
+}
+
+bool sx_chatbot_is_audio_channel_opened(void) {
+    if (!s_initialized) {
+        return false;
+    }
+    
+    sx_protocol_base_t *protocol = sx_chatbot_get_protocol_base();
+    if (protocol == NULL) {
+        return false;
+    }
+    
+    return SX_PROTOCOL_IS_AUDIO_CHANNEL_OPENED(protocol);
+}
+
+// Listening control (from reference repo)
+esp_err_t sx_chatbot_send_wake_word_detected(const char *wake_word) {
+    if (!s_initialized || wake_word == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    sx_protocol_base_t *protocol = sx_chatbot_get_protocol_base();
+    if (protocol == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    return SX_PROTOCOL_SEND_WAKE_WORD_DETECTED(protocol, wake_word);
+}
+
+esp_err_t sx_chatbot_send_start_listening(sx_listening_mode_t mode) {
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    sx_protocol_base_t *protocol = sx_chatbot_get_protocol_base();
+    if (protocol == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    return SX_PROTOCOL_SEND_START_LISTENING(protocol, mode);
+}
+
+esp_err_t sx_chatbot_send_stop_listening(void) {
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    sx_protocol_base_t *protocol = sx_chatbot_get_protocol_base();
+    if (protocol == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    return SX_PROTOCOL_SEND_STOP_LISTENING(protocol);
+}
+
+esp_err_t sx_chatbot_send_abort_speaking(sx_abort_reason_t reason) {
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    sx_protocol_base_t *protocol = sx_chatbot_get_protocol_base();
+    if (protocol == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    return SX_PROTOCOL_SEND_ABORT_SPEAKING(protocol, reason);
 }
 

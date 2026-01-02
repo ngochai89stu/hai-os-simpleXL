@@ -70,6 +70,16 @@ bool sx_playlist_is_next_preloaded(void);
 // Get preloaded track data (for gapless transition)
 const char* sx_playlist_get_preloaded_track(void);
 
+// Track Info (Phase 1: Hybrid Music Screen)
+const char* sx_playlist_get_title(size_t track_index);
+const char* sx_playlist_get_artist(size_t track_index);
+const char* sx_playlist_get_genre(size_t track_index);
+uint32_t sx_playlist_get_duration(size_t track_index);  // seconds
+size_t sx_playlist_get_count(void);
+
+// Album Art (Phase 1: Hybrid Music Screen)
+esp_err_t sx_playlist_get_cover_path(size_t track_index, char *path, size_t path_len);
+
 #ifdef __cplusplus
 }
 #endif

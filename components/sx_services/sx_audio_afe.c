@@ -4,8 +4,12 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Forward declarations for ESP-SR wrapper (if enabled)
-#ifdef CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE
+#if defined(CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE) || defined(CONFIG_SX_AUDIO_AFE_ESP_SR)
 extern esp_err_t sx_audio_afe_init_esp_sr(const sx_audio_afe_config_t *config);
 extern bool sx_audio_afe_process_esp_sr(const int16_t *input, int16_t *output, size_t sample_count);
 extern esp_err_t sx_audio_afe_reset_esp_sr(void);
@@ -42,7 +46,7 @@ esp_err_t sx_audio_afe_init(const sx_audio_afe_config_t *config) {
         s_config.sample_rate_hz = 16000; // Default
     }
     
-#ifdef CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE
+#if defined(CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE) || defined(CONFIG_SX_AUDIO_AFE_ESP_SR)
     // Initialize ESP-SR AFE using C++ wrapper
     esp_err_t ret = sx_audio_afe_init_esp_sr(config);
     if (ret != ESP_OK) {
@@ -70,7 +74,7 @@ bool sx_audio_afe_process(const int16_t *input, int16_t *output, size_t sample_c
         return false;
     }
     
-#ifdef CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE
+#if defined(CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE) || defined(CONFIG_SX_AUDIO_AFE_ESP_SR)
     // Process audio through ESP-SR AFE
     return sx_audio_afe_process_esp_sr(input, output, sample_count);
 #else
@@ -104,7 +108,7 @@ esp_err_t sx_audio_afe_reset(void) {
         return ESP_ERR_INVALID_STATE;
     }
     
-#ifdef CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE
+#if defined(CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE) || defined(CONFIG_SX_AUDIO_AFE_ESP_SR)
     // Call ESP-SR reset function
     extern esp_err_t sx_audio_afe_reset_esp_sr(void);
     esp_err_t ret = sx_audio_afe_reset_esp_sr();
@@ -119,5 +123,9 @@ esp_err_t sx_audio_afe_reset(void) {
     ESP_LOGD(TAG, "AFE reset");
     return ESP_OK;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 

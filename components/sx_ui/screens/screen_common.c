@@ -1,14 +1,12 @@
 // Common utilities for all screens
 #include "screen_common.h"
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "ui_screen_registry.h"
 #include "sx_ui_verify.h"
 #include "ui_icons.h"
-
-static const char *TAG = "screen_common";
 
 // Back button event handler
 static void back_btn_event_cb(lv_event_t *e) {

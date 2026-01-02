@@ -3,8 +3,8 @@
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include "esp_lvgl_port.h"
-#include "lvgl.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+#include "sx_lvgl_guard.h"  // P1.1: Runtime guard (Section 7.3 SIMPLEXL_ARCH v1.3)
 
 #include "esp_lvgl_port_disp.h"
 #include "esp_lvgl_port_touch.h"
@@ -12,9 +12,11 @@
 #include "sx_dispatcher.h"
 #include "sx_event.h"
 #include "sx_state.h"
+#include "sx_metrics.h"  // P2.6: Metrics for UI render time tracking
 #include "ui_router.h"
 #include "ui_screen_registry.h"
 #include "screens/register_all_screens.h"
+#include "screens/screen_display_helper.h"  // P0.1: Display service event handler
 #include "sx_ui_verify.h"
 
 static const char *TAG = "sx_ui";
@@ -35,6 +37,9 @@ static void sx_ui_task(void *arg) {
     const sx_display_handles_t *handles = args->display_handles;
     const sx_touch_handles_t *touch_handles = args->touch_handles;
     ESP_LOGI(TAG, "UI task started");
+    
+    // P1.1: Register UI task handle for runtime guard (Section 7.3)
+    sx_ui_set_ui_task_handle(xTaskGetCurrentTaskHandle());
 
     // Initialize LVGL port (vendored esp_lvgl_port uses lvgl_port_* API)
     lvgl_port_cfg_t lvgl_cfg = ESP_LVGL_PORT_INIT_CONFIG();
@@ -186,8 +191,6 @@ static void sx_ui_task(void *arg) {
     // Phase 2: Main UI loop - poll state and handle navigation events
     sx_state_t state;
     ui_screen_id_t last_screen = SCREEN_ID_BOOT;
-    uint32_t flash_start_time = 0;
-    bool flash_shown = false;
     uint32_t last_state_seq = 0;  // Optimized: Track state sequence to detect changes
     
     // Optimized: Use vTaskDelayUntil for consistent frame timing
@@ -207,7 +210,6 @@ static void sx_ui_task(void *arg) {
         
         if (state.ui.device_state == SX_DEV_BOOTING) {
             target_screen = SCREEN_ID_BOOT;
-            flash_shown = false;
         } else if (state.ui.device_state == SX_DEV_IDLE) {
             // Boot sequence: BOOT (3s) → FLASH (screensaver/waiting screen)
             // Navigation is handled by:
@@ -261,11 +263,29 @@ static void sx_ui_task(void *arg) {
             }
         }
         
+        // P0.1: Poll and handle display service events (service → UI)
+        // Note: UI task only handles events that require LVGL operations
+        sx_event_t ui_evt;
+        while (sx_dispatcher_poll_event(&ui_evt)) {
+            // Handle display service events (require LVGL operations)
+            if (ui_evt.type == SX_EVT_DISPLAY_CAPTURE_REQUEST ||
+                ui_evt.type == SX_EVT_DISPLAY_PREVIEW_REQUEST ||
+                ui_evt.type == SX_EVT_DISPLAY_HIDE_REQUEST) {
+                screen_display_helper_handle_event(&ui_evt);
+            }
+            // Other events are handled by orchestrator
+        }
+        
         // LVGL tick (always needed for smooth rendering)
+        // P2.6: Track UI render time for metrics
+        TickType_t render_start = xTaskGetTickCount();
         if (lvgl_port_lock(0)) {
             lv_timer_handler();
             lvgl_port_unlock();
         }
+        TickType_t render_end = xTaskGetTickCount();
+        uint32_t render_ms = (render_end - render_start) * portTICK_PERIOD_MS;
+        sx_metrics_update_ui_render(render_ms);
         
         // Optimized: Fixed interval for consistent frame rate
         vTaskDelayUntil(&last_wake_time, render_interval);

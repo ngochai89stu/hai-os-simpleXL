@@ -60,3 +60,11 @@ esp_err_t sx_audio_afe_reset(void);
 
 
 
+
+
+
+
+
+
+
+

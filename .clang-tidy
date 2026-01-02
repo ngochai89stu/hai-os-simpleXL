@@ -1,0 +1,31 @@
+---
+# clang-tidy configuration for SimpleXL
+# P2.2: Static analysis config (Section 7.4 SIMPLEXL_ARCH v1.3)
+
+Checks: >
+  -bugprone-*,
+  -cert-*,
+  -cppcoreguidelines-*,
+  -misc-*,
+  -modernize-*,
+  -performance-*,
+  -readability-*,
+  -clang-analyzer-*
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+AnalyzeTemporaryDtors: false
+User: ''
+
+# Focus on architecture violations
+CheckOptions:
+  - key: readability-identifier-naming.NamespaceCase
+    value: CamelCase
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+
+
+
+
+
+

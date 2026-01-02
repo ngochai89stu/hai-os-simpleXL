@@ -6,14 +6,17 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <stdio.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
 #include "sx_image_service.h"
+#include "ui_image_helpers.h"
 #include "sx_settings_service.h"
 #include "sx_state_manager.h"
+#include "ui_theme_tokens.h"
+#include "ui_list.h"
 
 static const char *TAG = "screen_snapshot_manager";
 
@@ -64,8 +67,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Snapshot Manager");
@@ -76,7 +79,8 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
@@ -88,36 +92,31 @@ static void on_create(void) {
     lv_obj_set_style_pad_all(btn_container, 0, LV_PART_MAIN);
     lv_obj_set_flex_flow(btn_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btn_container, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(btn_container, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(btn_container, UI_SPACE_XL, LV_PART_MAIN);
     
     s_save_btn = lv_btn_create(btn_container);
-    lv_obj_set_size(s_save_btn, LV_PCT(48), 50);
-    lv_obj_set_style_bg_color(s_save_btn, lv_color_hex(0x5b7fff), LV_PART_MAIN);
+    lv_obj_set_size(s_save_btn, LV_PCT(48), UI_SIZE_BUTTON_HEIGHT);
+    lv_obj_set_style_bg_color(s_save_btn, UI_COLOR_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_radius(s_save_btn, 5, LV_PART_MAIN);
     lv_obj_t *save_label = lv_label_create(s_save_btn);
     lv_label_set_text(save_label, "Save");
-    lv_obj_set_style_text_font(save_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(save_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(save_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(save_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(save_label);
     
     s_load_btn = lv_btn_create(btn_container);
-    lv_obj_set_size(s_load_btn, LV_PCT(48), 50);
-    lv_obj_set_style_bg_color(s_load_btn, lv_color_hex(0x3a3a3a), LV_PART_MAIN);
+    lv_obj_set_size(s_load_btn, LV_PCT(48), UI_SIZE_BUTTON_HEIGHT);
+    lv_obj_set_style_bg_color(s_load_btn, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
     lv_obj_set_style_radius(s_load_btn, 5, LV_PART_MAIN);
     lv_obj_t *load_label = lv_label_create(s_load_btn);
     lv_label_set_text(load_label, "Load");
-    lv_obj_set_style_text_font(load_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(load_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(load_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(load_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(load_label);
     
-    // Snapshot list (scrollable)
-    s_snapshot_list = lv_obj_create(s_content);
+    // Snapshot list (scrollable) - using shared component
+    s_snapshot_list = ui_scrollable_list_create(s_content);
     lv_obj_set_size(s_snapshot_list, LV_PCT(100), LV_PCT(100) - 70);
-    lv_obj_set_style_bg_opa(s_snapshot_list, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_snapshot_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_snapshot_list, 0, LV_PART_MAIN);
-    lv_obj_set_flex_flow(s_snapshot_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(s_snapshot_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Add event handlers for buttons
     lv_obj_add_event_cb(s_save_btn, save_btn_cb, LV_EVENT_CLICKED, NULL);
@@ -226,15 +225,15 @@ static void refresh_snapshot_list(void) {
     for (size_t i = 0; i < s_snapshot_count; i++) {
         snapshot_item_t *item = &s_snapshots[i];
         
-        // Create list item container
+        // Create list item using shared component (note: snapshot items need preview image, so we keep manual creation for now)
         item->list_item = lv_obj_create(s_snapshot_list);
         lv_obj_set_size(item->list_item, LV_PCT(100), 60);
-        lv_obj_set_style_bg_color(item->list_item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(item->list_item, lv_color_hex(0x3a3a3a), LV_PART_MAIN | LV_STATE_PRESSED);
+        lv_obj_set_style_bg_color(item->list_item, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(item->list_item, UI_COLOR_BG_PRESSED, LV_PART_MAIN | LV_STATE_PRESSED);
         lv_obj_set_style_border_width(item->list_item, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(item->list_item, 10, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(item->list_item, UI_SPACE_XL, LV_PART_MAIN);
         lv_obj_set_style_radius(item->list_item, 5, LV_PART_MAIN);
-        lv_obj_set_style_pad_row(item->list_item, 5, LV_PART_MAIN);
+        lv_obj_set_style_pad_row(item->list_item, UI_SPACE_SM, LV_PART_MAIN);
         
         // Add click event
         lv_obj_add_event_cb(item->list_item, snapshot_item_click_cb, LV_EVENT_CLICKED, item);
@@ -242,16 +241,16 @@ static void refresh_snapshot_list(void) {
         // Create preview image (placeholder, will load on demand)
         item->preview_img = lv_img_create(item->list_item);
         lv_obj_set_size(item->preview_img, SNAPSHOT_PREVIEW_SIZE, SNAPSHOT_PREVIEW_SIZE);
-        lv_obj_set_style_bg_color(item->preview_img, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(item->preview_img, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(item->preview_img, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_align(item->preview_img, LV_ALIGN_LEFT_MID, 0, 0);
         
         // Create label with file name
         lv_obj_t *label = lv_label_create(item->list_item);
         lv_label_set_text(label, item->file_name);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, SNAPSHOT_PREVIEW_SIZE + 10, 0);
+        lv_obj_set_style_text_font(label, UI_FONT_MEDIUM, 0);
+        lv_obj_set_style_text_color(label, UI_COLOR_TEXT_PRIMARY, 0);
+        lv_obj_align(label, LV_ALIGN_LEFT_MID, SNAPSHOT_PREVIEW_SIZE + UI_SPACE_XL, 0);
         
         // Load image preview asynchronously (simplified: load immediately)
         load_snapshot_image(item);
@@ -261,8 +260,8 @@ static void refresh_snapshot_list(void) {
         // Show empty state
         lv_obj_t *empty_label = lv_label_create(s_snapshot_list);
         lv_label_set_text(empty_label, "No snapshots found");
-        lv_obj_set_style_text_font(empty_label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(empty_label, lv_color_hex(0x888888), 0);
+        lv_obj_set_style_text_font(empty_label, UI_FONT_MEDIUM, 0);
+        lv_obj_set_style_text_color(empty_label, UI_COLOR_TEXT_SECONDARY, 0);
         lv_obj_center(empty_label);
     }
 }
@@ -290,7 +289,7 @@ static void load_snapshot_image(snapshot_item_t *item) {
     
     if (is_rgb565) {
         // Create LVGL image descriptor from RGB565 data
-        sx_lvgl_image_t *lvgl_img = sx_image_create_lvgl_rgb565(image_data, info.width, info.height);
+        sx_lvgl_image_t *lvgl_img = sx_ui_image_create_lvgl_rgb565(image_data, info.width, info.height);
         
         if (lvgl_img != NULL && lvgl_img->img_dsc != NULL) {
             // Set image source

@@ -24,6 +24,20 @@ menu "SimpleXL UI Configuration"
             Enable UI animations and transitions.
             Disable to reduce CPU usage.
 
+    config SX_ENABLE_UI_THREAD_ASSERT
+        bool "Enable UI Thread Runtime Assert (P1.1)"
+        default y
+        help
+            Enable runtime assertion to verify LVGL calls are only made from UI task.
+            This is a MUST requirement in SIMPLEXL_ARCH v1.3 Section 7.3.
+            
+            When enabled, SX_ASSERT_UI_THREAD() will check if LVGL calls are made
+            from the correct task. If a call is made from a non-UI task, it will
+            log an error and assert (in debug builds).
+            
+            Disable only for production builds where assert overhead is not acceptable.
+            However, it is recommended to keep enabled even in production for safety.
+
 endmenu
 
 

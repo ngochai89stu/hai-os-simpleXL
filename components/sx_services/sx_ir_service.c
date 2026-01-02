@@ -3,6 +3,7 @@
 #include <esp_log.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -682,8 +683,10 @@ esp_err_t sx_ir_sharp_ac_send(const sharp_ac_state_t *state, uint16_t repeat) {
         }
     }
     
-    // Gap (truncate to uint16_t max if needed)
-    pulses[idx++] = ((uint32_t)gap > 65535U) ? 65535U : (uint16_t)gap;
+    // Gap
+    // gap là uint32_t (100ms) có thể vượt UINT16_MAX -> clamp để tránh overflow và giữ an toàn
+    uint16_t gap_value = (gap > UINT16_MAX) ? UINT16_MAX : (uint16_t)gap;
+    pulses[idx++] = gap_value;
     
     // Release mutex before calling sx_ir_send_raw (it will acquire its own)
     if (s_ir_mutex != NULL) {
@@ -992,8 +995,9 @@ esp_err_t sx_ir_toshiba_ac_send(const toshiba_ac_state_t *state, uint16_t repeat
         }
     }
     
-    // Gap (truncate to uint16_t max if needed)
-    pulses[idx++] = ((uint32_t)gap > 65535U) ? 65535U : (uint16_t)gap;
+    // Gap
+    // gap đã là uint16_t (7.4ms) nên không thể > UINT16_MAX; tránh warning -Wtype-limits
+    pulses[idx++] = gap;
     
     // Release mutex before calling sx_ir_send_raw (it will acquire its own)
     if (s_ir_mutex != NULL) {

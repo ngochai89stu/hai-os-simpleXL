@@ -50,7 +50,7 @@ dependencies:
       require: private
       version: '>=4.2'
     source:
-      registry_url: https://components.espressif.com
+      registry_url: https://components.espressif.com/
       type: service
     version: 1.6.0
   espressif/esp-sr:
@@ -148,6 +148,7 @@ dependencies:
     version: 9.1.0
 direct_dependencies:
 - 78/esp-opus-encoder
+- espressif/esp-dsp
 - espressif/esp-sr
 - espressif/esp_audio_codec
 - espressif/esp_lcd_st7796
@@ -155,6 +156,6 @@ direct_dependencies:
 - espressif/esp_websocket_client
 - idf
 - lvgl/lvgl
-manifest_hash: 7e6c25523eefb43894462cd6f584f99346a410ced665432a249362512f3cce73
+manifest_hash: 9eacc9ebeaa823b9e20776d2197f7dbe742aa29630987149f973426563641309
 target: esp32s3
 version: 2.0.0

@@ -8,8 +8,7 @@
 #include <ctype.h>
 #include <stdint.h>
 
-// Include LVGL for image descriptor
-#include "lvgl.h"
+// P0.1: Removed LVGL include - LVGL image descriptor functions moved to UI helper
 
 // Include lodepng if available (from LVGL)
 #if LV_USE_LODEPNG
@@ -86,7 +85,7 @@ static esp_err_t parse_jpeg_header(const uint8_t *data, size_t data_len, uint16_
 }
 
 // Convert RGB888 to RGB565
-static uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b) {
+__attribute__((unused)) static uint16_t rgb888_to_rgb565(uint8_t r, uint8_t g, uint8_t b) {
     return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
 }
 
@@ -549,56 +548,9 @@ void sx_image_free(uint8_t *data) {
     }
 }
 
-// Create LVGL image descriptor from RGB565 data
-sx_lvgl_image_t* sx_image_create_lvgl_rgb565(uint8_t *data, uint16_t width, uint16_t height) {
-    if (data == NULL || width == 0 || height == 0) {
-        return NULL;
-    }
-    
-    // Allocate structure
-    sx_lvgl_image_t *img = (sx_lvgl_image_t *)malloc(sizeof(sx_lvgl_image_t));
-    if (img == NULL) {
-        return NULL;
-    }
-    
-    // Allocate LVGL image descriptor
-    lv_image_dsc_t *img_dsc = (lv_image_dsc_t *)malloc(sizeof(lv_image_dsc_t));
-    if (img_dsc == NULL) {
-        free(img);
-        return NULL;
-    }
-    
-    // Initialize image descriptor
-    img_dsc->header.w = width;
-    img_dsc->header.h = height;
-    img_dsc->header.cf = LV_COLOR_FORMAT_RGB565;
-    img_dsc->data_size = width * height * 2; // 2 bytes per pixel (RGB565)
-    img_dsc->data = data;
-    
-    img->img_dsc = img_dsc;
-    img->data = data;
-    
-    ESP_LOGI(TAG, "Created LVGL image descriptor: %dx%d, %zu bytes", width, height, img_dsc->data_size);
-    
-    return img;
-}
-
-// Free LVGL image descriptor and data
-void sx_image_free_lvgl(sx_lvgl_image_t *img) {
-    if (img == NULL) {
-        return;
-    }
-    
-    if (img->img_dsc != NULL) {
-        free(img->img_dsc);
-    }
-    
-    if (img->data != NULL) {
-        free(img->data);
-    }
-    
-    free(img);
-}
+// P0.1: LVGL image descriptor functions removed - moved to UI helper
+// UI task should create LVGL image descriptors directly using sx_lvgl.h
+// These functions are no longer available in service layer
 
 
 

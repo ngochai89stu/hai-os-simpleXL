@@ -2,14 +2,16 @@
 
 #include <esp_log.h>
 #include <string.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
 #include "sx_state.h"
 #include "sx_audio_eq.h"
 #include "sx_audio_reverb.h"
+#include "ui_theme_tokens.h"
+#include "ui_slider.h"
 
 #define SX_AUDIO_EQ_NUM_BANDS 10
 
@@ -46,8 +48,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Equalizer");
@@ -58,27 +60,28 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Preset selector (matching web demo)
     lv_obj_t *preset_label = lv_label_create(s_content);
     lv_label_set_text(preset_label, "Preset");
-    lv_obj_set_style_text_font(preset_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(preset_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(preset_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(preset_label, UI_COLOR_TEXT_PRIMARY, 0);
     
     s_preset_selector = lv_dropdown_create(s_content);
     lv_dropdown_set_options(s_preset_selector, "Flat\nPop\nRock\nJazz\nClassical\nCustom");
-    lv_obj_set_size(s_preset_selector, LV_PCT(100), 40);
-    lv_obj_set_style_bg_color(s_preset_selector, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_preset_selector, &lv_font_montserrat_14, 0);
+    lv_obj_set_size(s_preset_selector, LV_PCT(100), UI_SIZE_BUTTON_HEIGHT);
+    lv_obj_set_style_bg_color(s_preset_selector, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_preset_selector, UI_FONT_MEDIUM, 0);
     
     // Band sliders (10 bands) - matching web demo
     lv_obj_t *bands_label = lv_label_create(s_content);
     lv_label_set_text(bands_label, "Bands");
-    lv_obj_set_style_text_font(bands_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(bands_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(bands_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(bands_label, UI_COLOR_TEXT_PRIMARY, 0);
     
     // Create grid for band sliders
     lv_obj_t *bands_grid = lv_obj_create(s_content);
@@ -88,8 +91,8 @@ static void on_create(void) {
     lv_obj_set_style_pad_all(bands_grid, 0, LV_PART_MAIN);
     lv_obj_set_flex_flow(bands_grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(bands_grid, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(bands_grid, 10, LV_PART_MAIN);
-    lv_obj_set_style_pad_column(bands_grid, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(bands_grid, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(bands_grid, UI_SPACE_SM, LV_PART_MAIN);
     
     // 10 band sliders (vertical)
     const char* band_labels[] = {"31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"};
@@ -98,22 +101,19 @@ static void on_create(void) {
         lv_obj_set_size(band_container, 40, 180);
         lv_obj_set_style_bg_opa(band_container, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_set_style_border_width(band_container, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(band_container, 5, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(band_container, UI_SPACE_SM, LV_PART_MAIN);
         lv_obj_set_flex_flow(band_container, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_align(band_container, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         
         // Band label
         lv_obj_t *label = lv_label_create(band_container);
         lv_label_set_text(label, band_labels[i]);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0x888888), 0);
+        lv_obj_set_style_text_font(label, UI_FONT_MEDIUM, 0);
+        lv_obj_set_style_text_color(label, UI_COLOR_TEXT_SECONDARY, 0);
         
-        // Vertical slider
-        s_band_sliders[i] = lv_slider_create(band_container);
+        // Vertical slider - using shared component (note: vertical sliders need special handling)
+        s_band_sliders[i] = ui_gradient_slider_create(band_container, NULL, NULL);
         lv_obj_set_size(s_band_sliders[i], 20, 120);
-        lv_obj_set_style_bg_color(s_band_sliders[i], lv_color_hex(0x3a3a3a), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(s_band_sliders[i], lv_color_hex(0x5b7fff), LV_PART_INDICATOR);
-        lv_obj_set_style_bg_color(s_band_sliders[i], lv_color_hex(0x5b7fff), LV_PART_KNOB);
         lv_slider_set_value(s_band_sliders[i], 50, LV_ANIM_OFF); // 50 = 0dB (center)
         lv_slider_set_range(s_band_sliders[i], 0, 100); // 0 = -12dB, 50 = 0dB, 100 = +12dB
         lv_obj_set_style_transform_angle(s_band_sliders[i], 2700, 0); // Rotate 270 degrees (vertical)
@@ -122,29 +122,24 @@ static void on_create(void) {
     // Reverb control (merged from Audio Effects)
     lv_obj_t *reverb_label = lv_label_create(s_content);
     lv_label_set_text(reverb_label, "Reverb");
-    lv_obj_set_style_text_font(reverb_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(reverb_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(reverb_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(reverb_label, UI_COLOR_TEXT_PRIMARY, 0);
     
-    s_reverb_slider = lv_slider_create(s_content);
-    lv_obj_set_size(s_reverb_slider, LV_PCT(100), 20);
-    lv_obj_set_style_bg_color(s_reverb_slider, lv_color_hex(0x3a3a3a), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_reverb_slider, lv_color_hex(0x5b7fff), LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(s_reverb_slider, lv_color_hex(0x5b7fff), LV_PART_KNOB);
+    // Reverb slider using shared component
+    s_reverb_slider = ui_gradient_slider_create(s_content, reverb_slider_cb, NULL);
+    lv_obj_set_size(s_reverb_slider, LV_PCT(100), UI_SIZE_SLIDER_HEIGHT_THICK);
     lv_slider_set_value(s_reverb_slider, 0, LV_ANIM_OFF);
     lv_slider_set_range(s_reverb_slider, 0, 100);
     
-    // Add reverb slider event handler
-    lv_obj_add_event_cb(s_reverb_slider, reverb_slider_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    
     // Apply button (matching web demo)
     s_apply_btn = lv_btn_create(s_content);
-    lv_obj_set_size(s_apply_btn, LV_PCT(100), 50);
-    lv_obj_set_style_bg_color(s_apply_btn, lv_color_hex(0x5b7fff), LV_PART_MAIN);
+    lv_obj_set_size(s_apply_btn, LV_PCT(100), UI_SIZE_BUTTON_HEIGHT);
+    lv_obj_set_style_bg_color(s_apply_btn, UI_COLOR_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_radius(s_apply_btn, 5, LV_PART_MAIN);
     lv_obj_t *apply_label = lv_label_create(s_apply_btn);
     lv_label_set_text(apply_label, "Apply");
-    lv_obj_set_style_text_font(apply_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(apply_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(apply_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(apply_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(apply_label);
     
     // Verification: Log screen creation

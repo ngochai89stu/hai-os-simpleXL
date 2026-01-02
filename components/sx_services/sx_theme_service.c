@@ -1,10 +1,12 @@
 #include "sx_theme_service.h"
 #include "sx_settings_service.h"
+#include "sx_dispatcher.h"
+#include "sx_event.h"
+#include "sx_event_payloads.h"
 
 #include <esp_log.h>
 #include <string.h>
 #include <time.h>
-#include "lvgl.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -92,6 +94,33 @@ esp_err_t sx_theme_set_type(sx_theme_type_t theme_type) {
         s_change_callback(theme_type);
     }
     
+    // P0.1: Notify UI task via event (remove LVGL from service)
+    if (old_theme != theme_type) {
+        const sx_theme_colors_t *colors = sx_theme_get_colors();
+        sx_theme_data_t *theme_data = (sx_theme_data_t *)malloc(sizeof(sx_theme_data_t));
+        if (theme_data) {
+            theme_data->theme_type = theme_type;
+            theme_data->bg_primary = colors->bg_primary;
+            theme_data->bg_secondary = colors->bg_secondary;
+            theme_data->bg_tertiary = colors->bg_tertiary;
+            theme_data->text_primary = colors->text_primary;
+            theme_data->text_secondary = colors->text_secondary;
+            theme_data->accent = colors->accent;
+            theme_data->error = colors->error;
+            theme_data->success = colors->success;
+            
+            sx_event_t evt = {
+                .type = SX_EVT_THEME_CHANGED,
+                .priority = SX_EVT_PRIORITY_NORMAL,
+                .arg0 = 0,
+                .arg1 = 0,
+                .ptr = theme_data  // UI will handle and free this
+            };
+            
+            sx_dispatcher_post_event(&evt);
+        }
+    }
+    
     ESP_LOGI(TAG, "Theme changed to: %d", theme_type);
     return ESP_OK;
 }
@@ -126,23 +155,9 @@ const sx_theme_colors_t* sx_theme_get_colors(void) {
     return (effective_theme == SX_THEME_LIGHT) ? &s_light_theme : &s_dark_theme;
 }
 
-esp_err_t sx_theme_apply_to_object(lv_obj_t *obj, bool is_container) {
-    if (!s_initialized || obj == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    
-    const sx_theme_colors_t *colors = sx_theme_get_colors();
-    
-    if (is_container) {
-        // Apply background color
-        lv_obj_set_style_bg_color(obj, lv_color_hex(colors->bg_primary), LV_PART_MAIN);
-    } else {
-        // Apply secondary background for non-container objects
-        lv_obj_set_style_bg_color(obj, lv_color_hex(colors->bg_secondary), LV_PART_MAIN);
-    }
-    
-    return ESP_OK;
-}
+// P0.1: This function has been removed - UI task should apply theme directly via LVGL
+// Theme colors are available via sx_theme_get_colors() and UI receives SX_EVT_THEME_CHANGED event
+// UI components should call LVGL theme functions directly
 
 esp_err_t sx_theme_register_change_callback(sx_theme_change_cb_t callback) {
     if (!s_initialized) {

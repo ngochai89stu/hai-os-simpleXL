@@ -490,3 +490,11 @@ Giải pháp này cho phép ESP32 tận dụng sức mạnh của điện thoạ
 
 
 
+
+
+
+
+
+
+
+

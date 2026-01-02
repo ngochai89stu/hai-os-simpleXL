@@ -1,13 +1,14 @@
 #!/bin/bash
 # Architecture boundary checker for SimpleXL
 # Checks for forbidden includes and LVGL calls
+# P2.1: Enhanced with sx_lvgl.h and compile-time guard checks (Section 7.2 SIMPLEXL_ARCH v1.3)
 
 set -e
 
 ERRORS=0
 WARNINGS=0
 
-echo "=== SimpleXL Architecture Boundary Check ==="
+echo "=== SimpleXL Architecture Boundary Check (Enhanced P2.1) ==="
 echo ""
 
 # Check 1: Services should not include UI headers
@@ -70,6 +71,67 @@ else
 fi
 echo ""
 
+# P2.1: Check 6: Direct lvgl.h includes (should use sx_lvgl.h instead)
+echo "Checking: Direct lvgl.h includes (should use sx_lvgl.h)..."
+DIRECT_LVGL_INCLUDES=$(find components/sx_ui -name "*.c" -o -name "*.h" | xargs grep -l '^#include\s*[<"]lvgl\.h[>"]' 2>/dev/null | grep -v "sx_lvgl.h" | grep -v "sx_lvgl_guard.h" || true)
+if [ -n "$DIRECT_LVGL_INCLUDES" ]; then
+    echo "❌ VIOLATION: Direct lvgl.h includes found (should use sx_lvgl.h):"
+    echo "$DIRECT_LVGL_INCLUDES"
+    ERRORS=$((ERRORS + 1))
+else
+    echo "✅ OK: No direct lvgl.h includes (using sx_lvgl.h wrapper)"
+fi
+echo ""
+
+# P2.1: Check 7: sx_lvgl.h includes outside sx_ui (should fail)
+echo "Checking: sx_lvgl.h includes outside sx_ui component..."
+SX_LVGL_OUTSIDE_UI=$(find components -name "*.c" -o -name "*.h" | grep -v "components/sx_ui" | xargs grep -l 'sx_lvgl\.h' 2>/dev/null || true)
+if [ -n "$SX_LVGL_OUTSIDE_UI" ]; then
+    echo "❌ VIOLATION: sx_lvgl.h included outside sx_ui component:"
+    echo "$SX_LVGL_OUTSIDE_UI"
+    ERRORS=$((ERRORS + 1))
+else
+    echo "✅ OK: sx_lvgl.h only included in sx_ui component"
+fi
+echo ""
+
+# P2.1: Check 8: esp_lvgl_port.h includes (should be through sx_lvgl.h)
+echo "Checking: Direct esp_lvgl_port.h includes in sx_ui..."
+ESP_LVGL_PORT_DIRECT=$(find components/sx_ui -name "*.c" -o -name "*.h" | xargs grep -l '^#include\s*[<"]esp_lvgl_port\.h[>"]' 2>/dev/null | grep -v "sx_lvgl.h" | grep -v "sx_lvgl_guard.h" || true)
+if [ -n "$ESP_LVGL_PORT_DIRECT" ]; then
+    echo "⚠️  WARNING: Direct esp_lvgl_port.h includes (should be through sx_lvgl.h):"
+    echo "$ESP_LVGL_PORT_DIRECT"
+    WARNINGS=$((WARNINGS + 1))
+else
+    echo "✅ OK: esp_lvgl_port.h included through sx_lvgl.h wrapper"
+fi
+echo ""
+
+# P2.1: Check 9: Verify sx_lvgl.h exists and has compile-time guard
+echo "Checking: sx_lvgl.h exists and has compile-time guard..."
+if [ ! -f "components/sx_ui/include/sx_lvgl.h" ]; then
+    echo "❌ VIOLATION: sx_lvgl.h does not exist (Section 7.5 requirement)"
+    ERRORS=$((ERRORS + 1))
+else
+    if grep -q "SX_COMPONENT_SX_UI" components/sx_ui/include/sx_lvgl.h; then
+        echo "✅ OK: sx_lvgl.h exists and has compile-time guard"
+    else
+        echo "❌ VIOLATION: sx_lvgl.h missing compile-time guard (SX_COMPONENT_SX_UI)"
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+echo ""
+
+# P2.1: Check 10: Verify CMakeLists.txt has compile-time guard definition
+echo "Checking: CMakeLists.txt has SX_COMPONENT_SX_UI definition..."
+if grep -q "SX_COMPONENT_SX_UI" components/sx_ui/CMakeLists.txt; then
+    echo "✅ OK: CMakeLists.txt defines SX_COMPONENT_SX_UI"
+else
+    echo "❌ VIOLATION: CMakeLists.txt missing SX_COMPONENT_SX_UI definition"
+    ERRORS=$((ERRORS + 1))
+fi
+echo ""
+
 # Summary
 echo "=== Summary ==="
 echo "Errors: $ERRORS"
@@ -86,6 +148,9 @@ else
     echo "✅ All architecture boundaries respected!"
     exit 0
 fi
+
+
+
 
 
 

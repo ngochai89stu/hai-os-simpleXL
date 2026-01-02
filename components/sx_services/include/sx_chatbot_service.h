@@ -41,6 +41,18 @@ esp_err_t sx_chatbot_enable_intent_parsing(bool enable);
 esp_err_t sx_chatbot_set_protocol_ws_available(bool available);
 esp_err_t sx_chatbot_set_protocol_mqtt_available(bool available);
 
+// Audio channel control (from reference repo)
+#include "sx_protocol_base.h"
+esp_err_t sx_chatbot_open_audio_channel(void);
+esp_err_t sx_chatbot_close_audio_channel(void);
+bool sx_chatbot_is_audio_channel_opened(void);
+
+// Listening control (from reference repo)
+esp_err_t sx_chatbot_send_wake_word_detected(const char *wake_word);
+esp_err_t sx_chatbot_send_start_listening(sx_listening_mode_t mode);
+esp_err_t sx_chatbot_send_stop_listening(void);
+esp_err_t sx_chatbot_send_abort_speaking(sx_abort_reason_t reason);
+
 #ifdef __cplusplus
 }
 #endif

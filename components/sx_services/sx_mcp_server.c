@@ -250,9 +250,9 @@ char *sx_mcp_server_parse_message(const char *message) {
         // Check if list_user_only is requested
         bool list_user_only = false;
         if (params_json && cJSON_IsObject(params_json)) {
-            cJSON *cursor = cJSON_GetObjectItem(params_json, "cursor");
             // If cursor indicates user-only, set flag
             // For now, always list all tools
+            (void)cJSON_GetObjectItem(params_json, "cursor");  // May be used in future
         }
         response = handle_tools_list(id, list_user_only);
     } else if (strcmp(method, "tools/call") == 0) {

@@ -42,6 +42,10 @@ esp_err_t sx_protocol_ws_set_audio_callback(sx_protocol_audio_callback_t callbac
 typedef void (*sx_protocol_ws_message_cb_t)(const char *type, const char *payload);
 esp_err_t sx_protocol_ws_set_message_callback(sx_protocol_ws_message_cb_t callback);
 
+// Get base interface for protocol abstraction
+#include "sx_protocol_base.h"
+sx_protocol_base_t* sx_protocol_ws_get_base(void);
+
 #ifdef __cplusplus
 }
 #endif

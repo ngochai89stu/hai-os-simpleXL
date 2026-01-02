@@ -1,6 +1,8 @@
 #include "sx_audio_service.h"
+#include "sx_media_metadata.h"
 
 #include <esp_log.h>
+#include <math.h>
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,21 +67,90 @@ static SemaphoreHandle_t s_feed_mutex = NULL;
 static int16_t *s_feed_pcm_buffer = NULL;
 static size_t s_feed_pcm_capacity = 0;
 
+// Phase 1: Hybrid Music Screen - Position and Duration tracking
+static uint32_t s_playback_position_seconds = 0;  // Current playback position in seconds
+static uint32_t s_track_duration_seconds = 0;     // Total track duration in seconds
+static uint32_t s_samples_played = 0;              // Total samples played (for position calculation)
+static SemaphoreHandle_t s_position_mutex = NULL;  // Mutex for position tracking
+
+// Phase 1: Hybrid Music Screen - Spectrum/FFT data
+static uint16_t s_spectrum_bands[4] = {0, 0, 0, 0};  // Bass, Mid-low, Mid-high, High
+static SemaphoreHandle_t s_spectrum_mutex = NULL;
+
+// Phase 5: FFT processing state (for real FFT with ESP-DSP)
+#ifdef CONFIG_DSP_OPTIMIZED
+#include "dsps_fft2r.h"
+#include "dsps_wind.h"
+#define FFT_SIZE 512
+static float s_fft_input[FFT_SIZE * 2];  // Complex input (real + imag)
+static float s_window[FFT_SIZE];         // Window function
+static bool s_fft_initialized = false;
+static int16_t s_pcm_buffer[FFT_SIZE];   // PCM sample buffer for FFT
+static size_t s_pcm_buffer_pos = 0;      // Current position in buffer
+#endif
+
 // Cấu hình audio/I2S: đọc từ Kconfig (Kconfig.projbuild)
-#define SX_AUDIO_I2S_PORT       CONFIG_HAI_AUDIO_I2S_PORT
+// Use SX_AUDIO config if available, otherwise fallback to HAI_AUDIO or defaults
+#ifdef CONFIG_SX_AUDIO_SAMPLE_RATE
+#define SX_AUDIO_SAMPLE_RATE    CONFIG_SX_AUDIO_SAMPLE_RATE
+#elif defined(CONFIG_HAI_AUDIO_SAMPLE_RATE)
 #define SX_AUDIO_SAMPLE_RATE    CONFIG_HAI_AUDIO_SAMPLE_RATE
+#else
+#define SX_AUDIO_SAMPLE_RATE    16000
+#endif
+
+#ifdef CONFIG_HAI_AUDIO_I2S_PORT
+#define SX_AUDIO_I2S_PORT       CONFIG_HAI_AUDIO_I2S_PORT
+#else
+#define SX_AUDIO_I2S_PORT       0
+#endif
+
 #define SX_AUDIO_BITS           I2S_DATA_BIT_WIDTH_16BIT
+
+#ifdef CONFIG_HAI_AUDIO_DMA_DESC_NUM
 #define SX_AUDIO_DMA_DESC_NUM   CONFIG_HAI_AUDIO_DMA_DESC_NUM
+#else
+#define SX_AUDIO_DMA_DESC_NUM   6
+#endif
+
+#ifdef CONFIG_HAI_AUDIO_DMA_FRAME_NUM
 #define SX_AUDIO_DMA_FRAME_NUM  CONFIG_HAI_AUDIO_DMA_FRAME_NUM
+#else
+#define SX_AUDIO_DMA_FRAME_NUM  240
+#endif
 
 // Hardware pin mapping - cấu hình qua Kconfig, mặc định theo PCM5102A board hiện tại
 // PCM5102A Audio Output: GPIO 7 (DOUT), GPIO 15 (BCLK), GPIO 16 (WS)
 // Microphone Input: GPIO 4, 5, 6 (cần xác nhận chi tiết từng chân)
+#ifdef CONFIG_HAI_AUDIO_PIN_MCLK
 #define SX_AUDIO_PIN_MCLK       ((CONFIG_HAI_AUDIO_PIN_MCLK < 0) ? I2S_GPIO_UNUSED : CONFIG_HAI_AUDIO_PIN_MCLK)
+#else
+#define SX_AUDIO_PIN_MCLK       I2S_GPIO_UNUSED
+#endif
+
+#ifdef CONFIG_HAI_AUDIO_PIN_BCLK
 #define SX_AUDIO_PIN_BCLK       CONFIG_HAI_AUDIO_PIN_BCLK
+#else
+#define SX_AUDIO_PIN_BCLK       15
+#endif
+
+#ifdef CONFIG_HAI_AUDIO_PIN_WS
 #define SX_AUDIO_PIN_WS         CONFIG_HAI_AUDIO_PIN_WS
+#else
+#define SX_AUDIO_PIN_WS         16
+#endif
+
+#ifdef CONFIG_HAI_AUDIO_PIN_DOUT
 #define SX_AUDIO_PIN_DOUT       CONFIG_HAI_AUDIO_PIN_DOUT
+#else
+#define SX_AUDIO_PIN_DOUT       7
+#endif
+
+#ifdef CONFIG_HAI_AUDIO_PIN_DIN
 #define SX_AUDIO_PIN_DIN        CONFIG_HAI_AUDIO_PIN_DIN
+#else
+#define SX_AUDIO_PIN_DIN        6
+#endif
 
 // Audio service task
 static void sx_audio_task(void *arg);
@@ -114,6 +185,25 @@ esp_err_t sx_audio_service_init(void) {
     ESP_LOGI(TAG, "Initializing audio service...");
 
     s_feed_mutex = xSemaphoreCreateMutex();
+    s_position_mutex = xSemaphoreCreateMutex();
+    s_spectrum_mutex = xSemaphoreCreateMutex();
+    
+    // Phase 5: Initialize FFT if ESP-DSP is available
+#ifdef CONFIG_DSP_OPTIMIZED
+    if (!s_fft_initialized) {
+        // Initialize FFT tables
+        esp_err_t fft_ret = dsps_fft2r_init_fc32(NULL, FFT_SIZE);
+        if (fft_ret == ESP_OK) {
+            // Generate window function (Hanning window)
+            dsps_wind_hann_f32(s_window, FFT_SIZE);
+            s_fft_initialized = true;
+            s_pcm_buffer_pos = 0;
+            ESP_LOGI(TAG, "FFT initialized (size=%d)", FFT_SIZE);
+        } else {
+            ESP_LOGW(TAG, "FFT initialization failed: %s", esp_err_to_name(fft_ret));
+        }
+    }
+#endif
     
     // Phase 5: Initialize hardware volume control
     esp_err_t hw_vol_ret = sx_platform_hw_volume_init();
@@ -298,6 +388,14 @@ static void sx_audio_playback_task(void *arg) {
                 }
                 
                 sx_audio_service_feed_pcm(pcm_buf, pcm_samples, sample_rate);
+                
+                // Phase 1: Track playback position
+                if (s_position_mutex != NULL && xSemaphoreTake(s_position_mutex, 0) == pdTRUE) {
+                    s_samples_played += pcm_samples;
+                    s_current_sample_rate = sample_rate;
+                    xSemaphoreGive(s_position_mutex);
+                }
+                
                 // Notify audio power management
                 sx_audio_power_notify_activity();
             } else if (decode_ret == ESP_ERR_NOT_FINISHED) {
@@ -333,6 +431,14 @@ static void sx_audio_playback_task(void *arg) {
                 }
                 
                 sx_audio_service_feed_pcm(pcm_buf, pcm_samples, sample_rate);
+                
+                // Phase 1: Track playback position
+                if (s_position_mutex != NULL && xSemaphoreTake(s_position_mutex, 0) == pdTRUE) {
+                    s_samples_played += pcm_samples;
+                    s_current_sample_rate = sample_rate;
+                    xSemaphoreGive(s_position_mutex);
+                }
+                
                 // Notify audio power management
                 sx_audio_power_notify_activity();
             } else if (decode_ret == ESP_ERR_NOT_FINISHED || decode_ret == ESP_ERR_NOT_SUPPORTED) {
@@ -361,6 +467,14 @@ static void sx_audio_playback_task(void *arg) {
             }
             
             sx_audio_service_feed_pcm(pcm_buf, read, sample_rate);
+            
+            // Phase 1: Track playback position
+            if (s_position_mutex != NULL && xSemaphoreTake(s_position_mutex, 0) == pdTRUE) {
+                s_samples_played += read;
+                s_current_sample_rate = sample_rate;
+                xSemaphoreGive(s_position_mutex);
+            }
+            
             // Notify audio power management
             sx_audio_power_notify_activity();
         }
@@ -426,6 +540,28 @@ esp_err_t sx_audio_play_file(const char *file_path) {
         return ESP_ERR_NO_MEM;
     }
     strncpy(s_current_file, file_path, sizeof(s_current_file)-1);
+    
+    // Phase 5: Parse metadata and set duration
+    sx_track_meta_t meta;
+    esp_err_t meta_ret = sx_meta_parse_file(file_path, &meta);
+    if (meta_ret == ESP_OK && meta.duration_ms > 0) {
+        if (xSemaphoreTake(s_position_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_track_duration_seconds = meta.duration_ms / 1000;
+            xSemaphoreGive(s_position_mutex);
+            ESP_LOGI(TAG, "Set track duration: %lu seconds from metadata", (unsigned long)s_track_duration_seconds);
+        }
+    } else {
+        // Try duration estimate
+        uint32_t est_duration_ms = sx_meta_estimate_duration(file_path);
+        if (est_duration_ms > 0) {
+            if (xSemaphoreTake(s_position_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                s_track_duration_seconds = est_duration_ms / 1000;
+                xSemaphoreGive(s_position_mutex);
+                ESP_LOGI(TAG, "Set track duration: %lu seconds (estimated)", (unsigned long)s_track_duration_seconds);
+            }
+        }
+    }
+    
     return ESP_OK;
 }
 
@@ -730,4 +866,190 @@ static void sx_audio_recording_task(void *arg) {
     free(pcm_buf);
     s_recording_task_handle = NULL;
     vTaskDelete(NULL);
+}
+
+// Phase 1: Hybrid Music Screen - Position and Duration functions
+uint32_t sx_audio_get_position(void) {
+    if (s_position_mutex == NULL) {
+        return 0;
+    }
+    
+    if (xSemaphoreTake(s_position_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return s_playback_position_seconds;  // Return last known value
+    }
+    
+    // Calculate position from samples played
+    if (s_current_sample_rate > 0 && s_samples_played > 0) {
+        s_playback_position_seconds = s_samples_played / s_current_sample_rate;
+    }
+    
+    uint32_t position = s_playback_position_seconds;
+    xSemaphoreGive(s_position_mutex);
+    
+    return position;
+}
+
+uint32_t sx_audio_get_duration(void) {
+    if (s_position_mutex == NULL) {
+        return 0;
+    }
+    
+    if (xSemaphoreTake(s_position_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return s_track_duration_seconds;  // Return last known value
+    }
+    
+    uint32_t duration = s_track_duration_seconds;
+    xSemaphoreGive(s_position_mutex);
+    
+    return duration;
+}
+
+// Phase 5: Audio capabilities
+sx_audio_caps_t sx_audio_get_caps(void) {
+    sx_audio_caps_t caps = {0};
+    // Phase 5: Seek not yet implemented, set to false
+    caps.seek_supported = false;
+    return caps;
+}
+
+esp_err_t sx_audio_seek(uint32_t position) {
+    // Phase 5: Check if seek is supported
+    sx_audio_caps_t caps = sx_audio_get_caps();
+    if (!caps.seek_supported) {
+        ESP_LOGW(TAG, "Seek not supported");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    
+    // TODO: Implement seek functionality when decoder supports it
+    // This requires:
+    // 1. Stop current playback
+    // 2. Reopen file and seek decoder to position
+    // 3. Resume playback from new position
+    // 4. Update s_playback_position_seconds
+    
+    ESP_LOGW(TAG, "Seek not yet implemented");
+    return ESP_ERR_NOT_SUPPORTED;
+}
+
+// Phase 5: FFT Spectrum Processing
+// Note: Real FFT implementation requires ESP-DSP library
+// For now, provide framework with basic mock data that responds to audio activity
+
+// Phase 1: Hybrid Music Screen - Spectrum/FFT functions
+esp_err_t sx_audio_get_spectrum(uint16_t *bands, size_t band_count) {
+    if (bands == NULL || band_count < 4) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (s_spectrum_mutex == NULL) {
+        // Initialize with zeros if not ready
+        bands[0] = bands[1] = bands[2] = bands[3] = 0;
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    if (xSemaphoreTake(s_spectrum_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        // Return last known values
+        bands[0] = s_spectrum_bands[0];
+        bands[1] = s_spectrum_bands[1];
+        bands[2] = s_spectrum_bands[2];
+        bands[3] = s_spectrum_bands[3];
+        return ESP_OK;
+    }
+    
+    // Phase 5: Process spectrum data
+    if (s_playing && !s_paused) {
+#ifdef CONFIG_DSP_OPTIMIZED
+        // Use real FFT if available and buffer is full
+        if (s_fft_initialized && s_pcm_buffer_pos >= FFT_SIZE) {
+            // Prepare input: convert int16 PCM to float, apply window
+            for (int i = 0; i < FFT_SIZE; i++) {
+                s_fft_input[i * 2] = (float)s_pcm_buffer[i] / 32768.0f * s_window[i]; // Real
+                s_fft_input[i * 2 + 1] = 0.0f; // Imaginary
+            }
+            
+            // Perform FFT
+            dsps_fft2r_fc32(s_fft_input, FFT_SIZE);
+            
+            // Calculate magnitude and frequency bands
+            // FFT output: [real0, imag0, real1, imag1, ...]
+            // Frequency bins: bin[i] = i * sample_rate / FFT_SIZE
+            
+            float bass_energy = 0.0f;
+            float midlow_energy = 0.0f;
+            float midhigh_energy = 0.0f;
+            float high_energy = 0.0f;
+            
+            uint32_t sample_rate = s_current_sample_rate > 0 ? s_current_sample_rate : 44100;
+            float bin_width = (float)sample_rate / FFT_SIZE;
+            
+            // Calculate energy in each frequency band
+            for (int i = 1; i < FFT_SIZE / 2; i++) { // Skip DC component
+                float real = s_fft_input[i * 2];
+                float imag = s_fft_input[i * 2 + 1];
+                float magnitude = sqrtf(real * real + imag * imag);
+                float freq = i * bin_width;
+                
+                if (freq < 250.0f) {
+                    bass_energy += magnitude;
+                } else if (freq < 500.0f) {
+                    midlow_energy += magnitude;
+                } else if (freq < 2000.0f) {
+                    midhigh_energy += magnitude;
+                } else {
+                    high_energy += magnitude;
+                }
+            }
+            
+            // Normalize to 0-255 range (log scale for better visualization)
+            s_spectrum_bands[0] = (uint16_t)(fminf(255.0f, bass_energy * 0.1f));
+            s_spectrum_bands[1] = (uint16_t)(fminf(255.0f, midlow_energy * 0.1f));
+            s_spectrum_bands[2] = (uint16_t)(fminf(255.0f, midhigh_energy * 0.1f));
+            s_spectrum_bands[3] = (uint16_t)(fminf(255.0f, high_energy * 0.1f));
+            
+            // Reset buffer for next FFT
+            s_pcm_buffer_pos = 0;
+        } else {
+            // Buffer not full yet, use mock data
+            static uint32_t s_spectrum_counter = 0;
+            s_spectrum_counter++;
+            s_spectrum_bands[0] = (uint16_t)(128 + 127 * sin(s_spectrum_counter * 0.1));
+            s_spectrum_bands[1] = (uint16_t)(128 + 100 * sin(s_spectrum_counter * 0.15));
+            s_spectrum_bands[2] = (uint16_t)(128 + 80 * sin(s_spectrum_counter * 0.2));
+            s_spectrum_bands[3] = (uint16_t)(128 + 60 * sin(s_spectrum_counter * 0.25));
+            for (int i = 0; i < 4; i++) {
+                if (s_spectrum_bands[i] > 255) s_spectrum_bands[i] = 255;
+            }
+        }
+#else
+        // ESP-DSP not available, use mock data
+        static uint32_t s_spectrum_counter = 0;
+        s_spectrum_counter++;
+        s_spectrum_bands[0] = (uint16_t)(128 + 127 * sin(s_spectrum_counter * 0.1));
+        s_spectrum_bands[1] = (uint16_t)(128 + 100 * sin(s_spectrum_counter * 0.15));
+        s_spectrum_bands[2] = (uint16_t)(128 + 80 * sin(s_spectrum_counter * 0.2));
+        s_spectrum_bands[3] = (uint16_t)(128 + 60 * sin(s_spectrum_counter * 0.25));
+        for (int i = 0; i < 4; i++) {
+            if (s_spectrum_bands[i] > 255) s_spectrum_bands[i] = 255;
+        }
+#endif
+    } else {
+        // Not playing, fade out
+        for (int i = 0; i < 4; i++) {
+            if (s_spectrum_bands[i] > 0) {
+                s_spectrum_bands[i] = s_spectrum_bands[i] * 9 / 10; // Fade out
+            }
+        }
+    }
+    
+    // Copy spectrum data
+    bands[0] = s_spectrum_bands[0];  // Bass
+    bands[1] = s_spectrum_bands[1];  // Mid-low
+    bands[2] = s_spectrum_bands[2];  // Mid-high
+    bands[3] = s_spectrum_bands[3];  // High
+    
+    xSemaphoreGive(s_spectrum_mutex);
+    
+    // TODO: Implement actual FFT processing
+    // For now, return simulated data (will be updated when FFT is implemented)
+    return ESP_OK;
 }

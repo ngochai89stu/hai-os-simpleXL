@@ -481,3 +481,11 @@ app_main → Application::GetInstance() → MainEventLoop()
 
 *Báo cáo so sánh này dựa trên phân tích sâu của cả 2 dự án. Mọi kết luận đều có evidence từ source code.*
 
+
+
+
+
+
+
+
+

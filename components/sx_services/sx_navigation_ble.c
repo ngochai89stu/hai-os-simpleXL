@@ -845,7 +845,7 @@ esp_err_t sx_navigation_ble_get_icon(sx_nav_icon_t *icon) {
 }
 
 // Enqueue navigation data (queue-based processing)
-static void enqueue_navigation_data(const char *data) {
+__attribute__((unused)) static void enqueue_navigation_data(const char *data) {
     if (!data || strlen(data) == 0) {
         return;
     }
@@ -920,12 +920,12 @@ static void process_navigation_queue(void) {
 }
 
 // Update navigation timestamp (pong)
-static void pongNavigation(void) {
+__attribute__((unused)) static void pongNavigation(void) {
     s_last_nav_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
 }
 
 // Update speed timestamp (pong)
-static void pongSpeed(void) {
+__attribute__((unused)) static void pongSpeed(void) {
     s_last_speed_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
 }
 

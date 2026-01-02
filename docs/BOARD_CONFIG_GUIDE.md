@@ -161,3 +161,11 @@ idf.py flash monitor
 - [ST7789 Datasheet](https://www.displayfuture.com/Display/datasheet/controller/ST7789.pdf)
 - [ILI9341 Datasheet](https://cdn-shop.adafruit.com/datasheets/ILI9341.pdf)
 
+
+
+
+
+
+
+
+

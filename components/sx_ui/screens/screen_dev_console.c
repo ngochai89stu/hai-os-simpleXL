@@ -1,11 +1,12 @@
 #include "screen_dev_console.h"
 
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
+#include "ui_theme_tokens.h"
 
 static const char *TAG = "screen_dev_console";
 
@@ -27,8 +28,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Dev Console");
@@ -39,45 +40,46 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
-    // Output area (scrollable text area)
+    // Output area (scrollable text area) - keep black background for console
     s_output_area = lv_textarea_create(s_content);
     lv_obj_set_size(s_output_area, LV_PCT(100), LV_PCT(100) - 80);
     lv_textarea_set_text(s_output_area, "> Dev Console Ready\n> Type commands and press Execute\n");
     lv_textarea_set_placeholder_text(s_output_area, "Console output will appear here...");
-    lv_obj_set_style_bg_color(s_output_area, lv_color_hex(0x000000), LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_output_area, lv_color_hex(0x00ff00), 0);
-    lv_obj_set_style_text_font(s_output_area, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_bg_color(s_output_area, lv_color_hex(0x000000), LV_PART_MAIN);  // Keep black for console
+    lv_obj_set_style_text_color(s_output_area, lv_color_hex(0x00ff00), 0);  // Keep green for console text
+    lv_obj_set_style_text_font(s_output_area, UI_FONT_MEDIUM, 0);
     lv_textarea_set_text_selection(s_output_area, false);
     
     // Input area
     lv_obj_t *input_container = lv_obj_create(s_content);
-    lv_obj_set_size(input_container, LV_PCT(100), 60);
+    lv_obj_set_size(input_container, LV_PCT(100), UI_SIZE_BUTTON_HEIGHT);
     lv_obj_set_style_bg_opa(input_container, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(input_container, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(input_container, 0, LV_PART_MAIN);
     lv_obj_set_flex_flow(input_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(input_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(input_container, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_column(input_container, UI_SPACE_XL, LV_PART_MAIN);
     
     s_input_textarea = lv_textarea_create(input_container);
     lv_obj_set_flex_grow(s_input_textarea, 1);
-    lv_obj_set_size(s_input_textarea, LV_PCT(75), 50);
+    lv_obj_set_size(s_input_textarea, LV_PCT(75), UI_SIZE_BUTTON_HEIGHT - 10);
     lv_textarea_set_placeholder_text(s_input_textarea, "Enter command...");
-    lv_obj_set_style_bg_color(s_input_textarea, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_input_textarea, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_bg_color(s_input_textarea, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
+    lv_obj_set_style_text_font(s_input_textarea, UI_FONT_MEDIUM, 0);
     
     s_execute_btn = lv_btn_create(input_container);
-    lv_obj_set_size(s_execute_btn, LV_PCT(20), 50);
-    lv_obj_set_style_bg_color(s_execute_btn, lv_color_hex(0x5b7fff), LV_PART_MAIN);
+    lv_obj_set_size(s_execute_btn, LV_PCT(20), UI_SIZE_BUTTON_HEIGHT - 10);
+    lv_obj_set_style_bg_color(s_execute_btn, UI_COLOR_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_radius(s_execute_btn, 5, LV_PART_MAIN);
     lv_obj_t *execute_label = lv_label_create(s_execute_btn);
     lv_label_set_text(execute_label, "Exec");
-    lv_obj_set_style_text_font(execute_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(execute_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(execute_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(execute_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(execute_label);
     
     // Verification: Log screen creation

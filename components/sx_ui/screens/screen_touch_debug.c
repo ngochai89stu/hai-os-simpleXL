@@ -1,11 +1,12 @@
 #include "screen_touch_debug.h"
 
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
+#include "ui_theme_tokens.h"
 
 static const char *TAG = "screen_touch_debug";
 
@@ -52,8 +53,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Touch Debug");
@@ -64,35 +65,36 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Touch area (large interactive area)
     s_touch_area = lv_obj_create(s_content);
     lv_obj_set_size(s_touch_area, LV_PCT(100), LV_PCT(100) - 100);
-    lv_obj_set_style_bg_color(s_touch_area, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_touch_area, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_touch_area, 2, LV_PART_MAIN);
-    lv_obj_set_style_border_color(s_touch_area, lv_color_hex(0x5b7fff), LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_touch_area, UI_COLOR_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_radius(s_touch_area, 10, LV_PART_MAIN);
     
     lv_obj_t *touch_hint = lv_label_create(s_touch_area);
     lv_label_set_text(touch_hint, "Touch here to test");
-    lv_obj_set_style_text_font(touch_hint, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(touch_hint, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(touch_hint, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(touch_hint, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_center(touch_hint);
     
     // Coordinate display
     s_coord_label = lv_label_create(s_content);
     lv_label_set_text(s_coord_label, "Coordinates: (0, 0)");
-    lv_obj_set_style_text_font(s_coord_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_coord_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(s_coord_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_coord_label, UI_COLOR_TEXT_PRIMARY, 0);
     
     // Event display
     s_event_label = lv_label_create(s_content);
     lv_label_set_text(s_event_label, "Event: None");
-    lv_obj_set_style_text_font(s_event_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_event_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(s_event_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_event_label, UI_COLOR_TEXT_SECONDARY, 0);
     
     // Attach touch event handler
     lv_obj_add_event_cb(s_touch_area, touch_event_cb, LV_EVENT_ALL, NULL);

@@ -4,13 +4,15 @@
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
 #include "sx_state.h"
 #include "sx_bluetooth_service.h"
+#include "ui_theme_tokens.h"
+#include "ui_list.h"
 
 static const char *TAG = "screen_bluetooth_setting";
 
@@ -42,8 +44,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "Bluetooth Settings");
@@ -54,30 +56,31 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Status label
     s_status_label = lv_label_create(s_content);
     lv_label_set_text(s_status_label, "");
-    lv_obj_set_style_text_font(s_status_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s_status_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(s_status_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(s_status_label, UI_COLOR_TEXT_SECONDARY, 0);
     lv_obj_set_width(s_status_label, LV_PCT(100));
     
     // Scan button (matching web demo style)
     s_scan_btn = lv_btn_create(s_content);
-    lv_obj_set_size(s_scan_btn, LV_PCT(100), 50);
-    lv_obj_set_style_bg_color(s_scan_btn, lv_color_hex(0x5b7fff), LV_PART_MAIN);
+    lv_obj_set_size(s_scan_btn, LV_PCT(100), UI_SIZE_BUTTON_HEIGHT);
+    lv_obj_set_style_bg_color(s_scan_btn, UI_COLOR_PRIMARY, LV_PART_MAIN);
     lv_obj_set_style_radius(s_scan_btn, 5, LV_PART_MAIN);
     lv_obj_t *scan_label = lv_label_create(s_scan_btn);
     lv_label_set_text(scan_label, "Scan Devices");
-    lv_obj_set_style_text_font(scan_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(scan_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(scan_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(scan_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(scan_label);
     
-    // Device list (scrollable) - matching web demo
-    s_device_list = lv_obj_create(s_content);
+    // Device list (scrollable) - using shared component
+    s_device_list = ui_scrollable_list_create(s_content);
     lv_obj_set_size(s_device_list, LV_PCT(100), LV_PCT(100) - 120);
     lv_obj_set_style_bg_opa(s_device_list, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_device_list, 0, LV_PART_MAIN);
@@ -140,45 +143,27 @@ static void refresh_device_list(void) {
         s_device_count = 0;
     }
     
-    // Add devices to list
+    // Add devices to list using shared component
     for (size_t i = 0; i < s_device_count; i++) {
-        lv_obj_t *device_item = lv_obj_create(s_device_list);
-        lv_obj_set_size(device_item, LV_PCT(100), 60);
-        lv_obj_set_style_bg_color(device_item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-        lv_obj_set_style_bg_color(device_item, lv_color_hex(0x3a3a3a), LV_PART_MAIN | LV_STATE_PRESSED);
-        lv_obj_set_style_border_width(device_item, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(device_item, 10, LV_PART_MAIN);
-        lv_obj_set_style_radius(device_item, 5, LV_PART_MAIN);
-        
-        // Store device index in user data
-        lv_obj_set_user_data(device_item, (void *)(intptr_t)i);
-        
-        // Device name label
-        lv_obj_t *label = lv_label_create(device_item);
-        const char *name = s_devices[i].name[0] ? s_devices[i].name : s_devices[i].address;
-        lv_label_set_text(label, name);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
-        lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
-        
-        // Status indicator (paired/connected)
-        char status_str[32] = "";
+        // Build subtitle with status
+        char subtitle[64];
         if (s_devices[i].connected) {
-            strcpy(status_str, "🔵 Connected");
+            snprintf(subtitle, sizeof(subtitle), "%s - 🔵 Connected", s_devices[i].address);
         } else if (s_devices[i].paired) {
-            strcpy(status_str, "✓ Paired");
+            snprintf(subtitle, sizeof(subtitle), "%s - ✓ Paired", s_devices[i].address);
         } else {
-            strcpy(status_str, "○ Available");
+            snprintf(subtitle, sizeof(subtitle), "%s - ○ Available", s_devices[i].address);
         }
         
-        lv_obj_t *status = lv_label_create(device_item);
-        lv_label_set_text(status, status_str);
-        lv_obj_set_style_text_font(status, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(status, lv_color_hex(0x888888), 0);
-        lv_obj_align(status, LV_ALIGN_RIGHT_MID, -10, 0);
-        
-        // Add click event
-        lv_obj_add_event_cb(device_item, device_item_click_cb, LV_EVENT_CLICKED, NULL);
+        ui_list_item_two_line_create(
+            s_device_list,
+            NULL,  // No icon
+            s_devices[i].name[0] ? s_devices[i].name : s_devices[i].address,
+            subtitle,
+            NULL,  // No extra text
+            device_item_click_cb,
+            (void*)(intptr_t)i
+        );
     }
     
     update_status();

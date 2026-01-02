@@ -6,6 +6,7 @@
 #include "sx_dispatcher.h"
 #include "sx_event.h"
 #include "sx_orchestrator.h"
+#include "sx_error_handler.h"
 
 #include "sx_platform.h"
 #include "sx_spi_bus_manager.h"
@@ -16,10 +17,13 @@
 #include "sx_radio_service.h"
 #include "sx_ir_service.h"
 #include "sx_chatbot_service.h"
+#include "sx_mcp_server.h"
+#include "sx_mcp_tools.h"
 #include "sx_wifi_service.h"
 #include "sx_settings_service.h"
 #include "sx_intent_service.h"
 #include "sx_ota_service.h"
+#include "sx_ota_full_service.h"
 #include "sx_audio_ducking.h"
 #include "sx_playlist_manager.h"
 #include "sx_theme_service.h"
@@ -44,6 +48,7 @@
 #include "sx_protocol_mqtt.h"
 #include "sx_audio_protocol_bridge.h"
 #include "sx_lazy_loader.h"
+#include "sx_selftest.h"
 
 static const char *TAG = "sx_bootstrap";
 
@@ -61,6 +66,14 @@ esp_err_t sx_bootstrap_start(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    
+    // Phase 4: Initialize centralized error handler
+    ret = sx_error_handler_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Error handler init failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "Error handler initialized");
+    }
     
     // Init settings service (Phase 5)
     ret = sx_settings_service_init();
@@ -85,6 +98,27 @@ esp_err_t sx_bootstrap_start(void) {
     } else {
         ESP_LOGI(TAG, "OTA service initialized");
     }
+
+    // Init OTA full service
+    ret = sx_ota_full_service_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "OTA full service init failed (non-critical): %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "OTA full service initialized");
+    }
+
+    // 1.5) Initialize MCP server early (before dispatcher consumers)
+    esp_err_t mcp_ret = sx_mcp_server_init();
+    if (mcp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "MCP server init failed: %s", esp_err_to_name(mcp_ret));
+        return mcp_ret;
+    }
+    mcp_ret = sx_mcp_tools_register_all();
+    if (mcp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "MCP tools register failed: %s", esp_err_to_name(mcp_ret));
+        return mcp_ret;
+    }
+    ESP_LOGI(TAG, "MCP server initialized + tools registered");
 
     // 2) Init dispatcher
     ESP_LOGI(TAG, "Initializing dispatcher...");
@@ -185,7 +219,12 @@ esp_err_t sx_bootstrap_start(void) {
     }
 
     // 8) Start UI (owner task) with the display handle and optional touch
+#if CONFIG_HAI_TOUCH_ENABLE
     ESP_ERROR_CHECK(sx_ui_start(&display_handles, &touch_handles));
+#else
+    sx_touch_handles_t touch_handles = {0};  // Zero-initialized for disabled touch
+    ESP_ERROR_CHECK(sx_ui_start(&display_handles, &touch_handles));
+#endif
     
     // Load and apply saved brightness setting
     int32_t saved_brightness = CONFIG_SX_DISPLAY_BRIGHTNESS_DEFAULT;
@@ -764,6 +803,28 @@ esp_err_t sx_bootstrap_start(void) {
         }
     }
     */
+
+    // 10) Initialize and run smoke test (if enabled)
+    // Note: Smoke test runs after UI is initialized to test LVGL and screen draw
+    #ifdef CONFIG_SX_SELFTEST_ENABLE
+    esp_err_t selftest_ret = sx_selftest_init();
+    if (selftest_ret == ESP_OK) {
+        // Wait a bit for UI to fully initialize
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        
+        sx_selftest_result_t test_result;
+        selftest_ret = sx_selftest_run(&test_result);
+        if (selftest_ret == ESP_OK) {
+            sx_selftest_print_result(&test_result);
+        } else {
+            ESP_LOGW(TAG, "Smoke test run failed: %s", esp_err_to_name(selftest_ret));
+        }
+    } else {
+        ESP_LOGW(TAG, "Smoke test init failed: %s", esp_err_to_name(selftest_ret));
+    }
+    #else
+    // Smoke test disabled - enable via CONFIG_SX_SELFTEST_ENABLE
+    #endif
 
     ESP_LOGI(TAG, "bootstrap done - core services enabled");
     return ESP_OK;

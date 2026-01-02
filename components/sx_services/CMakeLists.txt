@@ -1,12 +1,13 @@
 idf_component_register(
-    LANGUAGE CXX
     SRCS
+           "sx_service_helpers/sx_http_client.cpp"
            "sx_audio_service.c"
                "sx_audio_eq.c"
                "sx_audio_reverb.c"
                "sx_audio_ducking.c"
                "sx_audio_crossfade.c"
                "sx_playlist_manager.c"
+               "sx_media_metadata.c"
                "sx_sd_service.c"
                "sx_sd_music_service.c"
                "sx_radio_service.c"
@@ -43,9 +44,13 @@ idf_component_register(
         ../sx_protocol/sx_protocol_ws.c
         ../sx_protocol/sx_protocol_mqtt.c
         ../sx_protocol/sx_protocol_mqtt_udp.c
+        ../sx_protocol/sx_protocol_factory.c
+        ../sx_protocol/sx_protocol_common.c
         "sx_settings_service.c"
         "sx_network_optimizer.c"
         "sx_ota_service.c"
+        "sx_ota_full_service.cpp"
+        "sx_ota_full.cpp"
                "sx_intent_service.c"
                "sx_weather_service.c"
                "sx_theme_service.c"
@@ -64,8 +69,11 @@ idf_component_register(
                "sx_power_service.c"
                "sx_state_manager.c"
                "sx_audio_protocol_bridge.c"
+               "sx_display_service.c"
+               "sx_jpeg_encoder.c"
     INCLUDE_DIRS
         "include"
+        "sx_service_helpers"
         "../sx_protocol/include"
     REQUIRES
         sx_core
@@ -82,7 +90,9 @@ idf_component_register(
         json
         nvs_flash
         mqtt
+        esp-dsp
     PRIV_REQUIRES
         bt
+        app_update
 )
 

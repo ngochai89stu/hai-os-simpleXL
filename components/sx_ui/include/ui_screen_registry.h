@@ -33,6 +33,9 @@ typedef enum {
     SCREEN_ID_PERMISSION,               // Legacy: PermissionScreen (essential privacy)
     SCREEN_ID_SCREENSAVER,              // Legacy: ScreensaverScreen (core UX)
     SCREEN_ID_SCREENSAVER_SETTING,     // Legacy: ScreensaverSettingScreen
+    SCREEN_ID_AC_CONTROL,              // New: AC Control Screen
+    SCREEN_ID_SYSTEM_INFO,             // New: System Info Screen
+    SCREEN_ID_QUICK_SETTINGS,          // New: Quick Settings Screen
     
     // P1 - Advanced Feature Screens (2 screens)
     SCREEN_ID_AUDIO_EFFECTS,            // Legacy: AudioEffectsScreen (merge into Equalizer in Phase 4)
@@ -47,7 +50,7 @@ typedef enum {
     SCREEN_ID_DEV_CONSOLE,              // Legacy: DevConsoleScreen (command console)
     SCREEN_ID_TOUCH_DEBUG,              // Legacy: TouchDebugScreen
     
-    SCREEN_ID_MAX,                      // Total: 29 screens
+    SCREEN_ID_MAX,                      // Total: 32 screens (29 + 3 new)
 } ui_screen_id_t;
 
 // Screen lifecycle callbacks (C-style, no business logic)

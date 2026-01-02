@@ -1,7 +1,7 @@
 #include "ui_animations.h"
 
 #include <esp_log.h>
-#include "lvgl.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
 
 static const char *TAG = "ui_anim";
 
@@ -25,12 +25,18 @@ esp_err_t ui_anim_apply(lv_obj_t *obj, const ui_anim_config_t *config) {
     switch (config->type) {
         case UI_ANIM_FADE_IN:
             lv_anim_set_values(&a, LV_OPA_TRANSP, LV_OPA_COVER);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
             lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_style_opa);
+#pragma GCC diagnostic pop
             break;
             
         case UI_ANIM_FADE_OUT:
             lv_anim_set_values(&a, LV_OPA_COVER, LV_OPA_TRANSP);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
             lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_style_opa);
+#pragma GCC diagnostic pop
             break;
             
         case UI_ANIM_SLIDE_IN_LEFT: {
@@ -64,13 +70,19 @@ esp_err_t ui_anim_apply(lv_obj_t *obj, const ui_anim_config_t *config) {
         case UI_ANIM_SCALE_IN:
             // LVGL zoom: 256 = 100% (no zoom), 0 = 0%
             lv_anim_set_values(&a, 0, 256);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
             lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_style_transform_zoom);
+#pragma GCC diagnostic pop
             break;
             
         case UI_ANIM_SCALE_OUT:
             // LVGL zoom: 256 = 100% (no zoom), 0 = 0%
             lv_anim_set_values(&a, 256, 0);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
             lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_style_transform_zoom);
+#pragma GCC diagnostic pop
             break;
             
         default:

@@ -6,6 +6,10 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 static const char *TAG = "sx_state_mgr";
 
 // State manager state
@@ -125,5 +129,7 @@ esp_err_t sx_state_manager_load(void) {
     return ESP_OK;
 }
 
-
+#ifdef __cplusplus
+}
+#endif
 

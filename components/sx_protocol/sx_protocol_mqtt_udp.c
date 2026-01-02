@@ -316,51 +316,43 @@ esp_err_t sx_protocol_mqtt_udp_send_audio(const sx_audio_stream_packet_t *packet
     *(uint32_t *)&nonce[8] = htonl(packet->timestamp);
     *(uint32_t *)&nonce[12] = htonl(++s_local_sequence);
     
-    // Encrypt payload
-    uint8_t *encrypted = (uint8_t *)malloc(sizeof(nonce) + packet->payload_size);
-    if (encrypted == NULL) {
-        xSemaphoreGive(s_udp_mutex);
-        return ESP_ERR_NO_MEM;
-    }
-    
-    memcpy(encrypted, nonce, sizeof(nonce));
-    
-    size_t nc_off = 0;
-    uint8_t stream_block[16] = {0};
-    int ret = mbedtls_aes_crypt_ctr(&s_aes_ctx, packet->payload_size, &nc_off,
-                                    nonce, stream_block, packet->payload,
-                                    encrypted + sizeof(nonce));
-    
-    if (ret != 0) {
-        ESP_LOGE(TAG, "Failed to encrypt audio data");
-        free(encrypted);
-        xSemaphoreGive(s_udp_mutex);
-        return ESP_FAIL;
-    }
-    
-    // Build UDP packet
-    size_t packet_size = sizeof(mqtt_udp_audio_packet_t) + packet->payload_size;
-    uint8_t *udp_packet = (uint8_t *)malloc(packet_size);
+    // Optimize: Single allocation for UDP packet (encrypted payload + UDP header)
+    // Note: nonce is only used for encryption, not sent in UDP packet
+    size_t udp_packet_size = sizeof(mqtt_udp_audio_packet_t) + packet->payload_size;
+    uint8_t *udp_packet = (uint8_t *)malloc(udp_packet_size);
     if (udp_packet == NULL) {
-        free(encrypted);
         xSemaphoreGive(s_udp_mutex);
         return ESP_ERR_NO_MEM;
     }
     
     mqtt_udp_audio_packet_t *pkt = (mqtt_udp_audio_packet_t *)udp_packet;
+    
+    // Encrypt payload directly into UDP packet payload (optimization: single allocation)
+    size_t nc_off = 0;
+    uint8_t stream_block[16] = {0};
+    int ret = mbedtls_aes_crypt_ctr(&s_aes_ctx, packet->payload_size, &nc_off,
+                                    nonce, stream_block, packet->payload,
+                                    pkt->payload);
+    
+    if (ret != 0) {
+        ESP_LOGE(TAG, "Failed to encrypt audio data");
+        free(udp_packet);
+        xSemaphoreGive(s_udp_mutex);
+        return ESP_FAIL;
+    }
+    
+    // Fill UDP packet header
     pkt->type = 0x01;
     pkt->flags = 0;
     pkt->payload_len = htons(packet->payload_size);
     pkt->ssrc = 0;  // Not used
     pkt->timestamp = htonl(packet->timestamp);
     pkt->sequence = htonl(s_local_sequence);
-    memcpy(pkt->payload, encrypted + sizeof(nonce), packet->payload_size);
     
     // Send packet
-    int sent = lwip_send(s_udp_socket, udp_packet, packet_size, 0);
+    int sent = lwip_send(s_udp_socket, udp_packet, udp_packet_size, 0);
     
     free(udp_packet);
-    free(encrypted);
     xSemaphoreGive(s_udp_mutex);
     
     if (sent < 0) {

@@ -1,11 +1,11 @@
 #include "screen_boot.h"
 
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "sx_ui_verify.h"
-#include "sx_assets.h"
+#include "ui_assets_wrapper.h"  // Wrapper để access assets (tuân theo SIMPLEXL_ARCH v1.3)
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -28,8 +28,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Get bootscreen image from assets
-    const lv_img_dsc_t *bootscreen_img = sx_assets_get_bootscreen_img();
+    // Get bootscreen image from assets (qua wrapper - tuân theo SIMPLEXL_ARCH v1.3)
+    const lv_img_dsc_t *bootscreen_img = ui_assets_get_bootscreen_img();
     if (bootscreen_img == NULL) {
         ESP_LOGE(TAG, "Bootscreen image not available");
         // Fallback: black background

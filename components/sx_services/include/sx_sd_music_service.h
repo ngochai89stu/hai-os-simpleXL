@@ -79,3 +79,11 @@ esp_err_t sx_sd_music_get_cover_art_info(const char *file_path, uint32_t *offset
 
 
 
+
+
+
+
+
+
+
+

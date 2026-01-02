@@ -3,8 +3,8 @@
 #include <esp_log.h>
 #include <string.h>
 #include <stdlib.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
+
 #include "ui_router.h"
 #include "screen_common.h"
 #include "sx_ui_verify.h"
@@ -13,6 +13,8 @@
 #include "sx_sd_music_service.h"
 #include "sx_audio_service.h"
 #include "ui_icons.h"
+#include "ui_theme_tokens.h"
+#include "ui_list.h"
 
 static const char *TAG = "screen_sd_card_music";
 
@@ -43,8 +45,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set background
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create top bar with back button
     s_top_bar = screen_common_create_top_bar_with_back(container, "SD Card Music");
@@ -55,29 +57,25 @@ static void on_create(void) {
     lv_obj_align(s_content, LV_ALIGN_TOP_LEFT, 0, 40);
     lv_obj_set_style_bg_opa(s_content, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_content, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_content, 10, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_content, UI_SPACE_XL, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_content, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(s_content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Refresh button
     s_refresh_btn = lv_btn_create(s_content);
-    lv_obj_set_size(s_refresh_btn, LV_PCT(100), 40);
-    lv_obj_set_style_bg_color(s_refresh_btn, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
+    lv_obj_set_size(s_refresh_btn, LV_PCT(100), UI_SIZE_BUTTON_HEIGHT);
+    lv_obj_set_style_bg_color(s_refresh_btn, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);
     lv_obj_set_style_radius(s_refresh_btn, 5, LV_PART_MAIN);
     lv_obj_t *refresh_label = lv_label_create(s_refresh_btn);
     lv_label_set_text(refresh_label, "🔄 Refresh");
-    lv_obj_set_style_text_font(refresh_label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(refresh_label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(refresh_label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(refresh_label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(refresh_label);
     
-    // File browser list (scrollable) - matching web demo
-    s_file_list = lv_obj_create(s_content);
+    // File browser list (scrollable) - using shared component
+    s_file_list = ui_scrollable_list_create(s_content);
     lv_obj_set_size(s_file_list, LV_PCT(100), LV_PCT(100) - 50);
-    lv_obj_set_style_bg_opa(s_file_list, LV_OPA_TRANSP, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_file_list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_file_list, 0, LV_PART_MAIN);
-    lv_obj_set_flex_flow(s_file_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(s_file_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
     
     // Load files from SD card if mounted
     s_files_loaded = false;
@@ -172,8 +170,8 @@ static void load_sd_files(void) {
             lv_obj_clean(s_file_list);
             lv_obj_t *msg = lv_label_create(s_file_list);
             lv_label_set_text(msg, "SD card not mounted");
-            lv_obj_set_style_text_font(msg, &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(msg, lv_color_hex(0x888888), 0);
+            lv_obj_set_style_text_font(msg, UI_FONT_MEDIUM, 0);
+            lv_obj_set_style_text_color(msg, UI_COLOR_TEXT_SECONDARY, 0);
             lv_obj_align(msg, LV_ALIGN_CENTER, 0, 0);
             lvgl_port_unlock();
         }
@@ -196,39 +194,19 @@ static void load_sd_files(void) {
     if (ret == ESP_OK && count > 0) {
         // Add ".." for parent directory if not at root
         if (strcmp(s_current_path, "/") != 0) {
-            lv_obj_t *parent_item = lv_obj_create(s_file_list);
-            lv_obj_set_size(parent_item, LV_PCT(100), 50);
-            lv_obj_set_style_bg_color(parent_item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-            lv_obj_set_style_bg_color(parent_item, lv_color_hex(0x3a3a3a), LV_PART_MAIN | LV_STATE_PRESSED);
-            lv_obj_set_style_border_width(parent_item, 0, LV_PART_MAIN);
-            lv_obj_set_style_pad_all(parent_item, 10, LV_PART_MAIN);
-            lv_obj_set_style_radius(parent_item, 5, LV_PART_MAIN);
-            
-            // Parent directory icon
-            lv_obj_t *icon = ui_icon_create(parent_item, UI_ICON_SD_CARD, 16);
-            if (icon != NULL) {
-                lv_obj_set_style_text_color(icon, lv_color_hex(0x888888), 0);
-                lv_obj_align(icon, LV_ALIGN_LEFT_MID, 10, 0);
-            }
-            lv_obj_t *label = lv_label_create(parent_item);
-            lv_label_set_text(label, "..");
-            lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(label, lv_color_hex(0x888888), 0);
-            lv_obj_align(label, LV_ALIGN_LEFT_MID, 35, 0);  // Position after icon
-            
-            // Store special marker for parent directory
-            lv_obj_set_user_data(parent_item, (void *)-1);
-            lv_obj_add_event_cb(parent_item, file_item_click_cb, LV_EVENT_CLICKED, NULL);
+            ui_list_item_two_line_create(
+                s_file_list,
+                NULL,  // No icon (or use UI_ICON_SD_CARD if needed)
+                "..",
+                "Parent directory",
+                NULL,
+                file_item_click_cb,
+                (void *)-1  // Special marker for parent directory
+            );
         }
         
+        // Add files using shared component
         for (size_t i = 0; i < count; i++) {
-            lv_obj_t *file_item = lv_obj_create(s_file_list);
-            lv_obj_set_size(file_item, LV_PCT(100), 50);
-            lv_obj_set_style_bg_color(file_item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);
-            lv_obj_set_style_bg_color(file_item, lv_color_hex(0x3a3a3a), LV_PART_MAIN | LV_STATE_PRESSED);
-            lv_obj_set_style_border_width(file_item, 0, LV_PART_MAIN);
-            lv_obj_set_style_pad_all(file_item, 10, LV_PART_MAIN);
-            lv_obj_set_style_radius(file_item, 5, LV_PART_MAIN);
             
             // Build full path
             char full_path[512];
@@ -244,52 +222,44 @@ static void load_sd_files(void) {
                 strncpy(data->path, entries[i].path, sizeof(data->path) - 1);
                 data->path[sizeof(data->path) - 1] = '\0';
                 data->is_dir = entries[i].is_dir;
-                lv_obj_set_user_data(file_item, data);
             }
             
-            // Add click handler
-            lv_obj_add_event_cb(file_item, file_item_click_cb, LV_EVENT_CLICKED, NULL);
-            
-            // Create icon (folder or music file)
-            ui_icon_type_t icon_type = entries[i].is_dir ? UI_ICON_SD_CARD : UI_ICON_MUSIC_PLAYER;
-            lv_obj_t *icon = ui_icon_create(file_item, icon_type, 16);
-            if (icon != NULL) {
-                lv_obj_align(icon, LV_ALIGN_LEFT_MID, 10, 0);
-            }
-            
-            // Create label with metadata if available
-            lv_obj_t *label = lv_label_create(file_item);
+            // Build display text
             char display_text[256];
-            
+            char subtitle[256] = {0};
             if (!entries[i].is_dir && entries[i].metadata.has_metadata) {
-                // Show title and artist if available
                 if (strlen(entries[i].metadata.title) > 0 && strlen(entries[i].metadata.artist) > 0) {
-                    snprintf(display_text, sizeof(display_text), "%s - %s", 
-                            entries[i].metadata.title, entries[i].metadata.artist);
+                    snprintf(display_text, sizeof(display_text), "%s", entries[i].metadata.title);
+                    snprintf(subtitle, sizeof(subtitle), "%s", entries[i].metadata.artist);
                 } else if (strlen(entries[i].metadata.title) > 0) {
-                    snprintf(display_text, sizeof(display_text), "%s", 
-                            entries[i].metadata.title);
+                    snprintf(display_text, sizeof(display_text), "%s", entries[i].metadata.title);
                 } else {
                     snprintf(display_text, sizeof(display_text), "%s", entries[i].name);
                 }
             } else {
                 snprintf(display_text, sizeof(display_text), "%s", entries[i].name);
+                if (entries[i].is_dir) {
+                    snprintf(subtitle, sizeof(subtitle), "Directory");
+                }
             }
             
-            lv_label_set_text(label, display_text);
-            lv_obj_align(label, LV_ALIGN_LEFT_MID, 35, 0);  // Position after icon
-            lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
-            lv_obj_align(label, LV_ALIGN_LEFT_MID, 10, 0);
-            lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+            ui_list_item_two_line_create(
+                s_file_list,
+                NULL,  // No icon for now
+                display_text,
+                subtitle[0] ? subtitle : NULL,
+                NULL,  // No extra text
+                file_item_click_cb,
+                data
+            );
         }
         s_files_loaded = true;
     } else {
         // Show "No files" message
         lv_obj_t *msg = lv_label_create(s_file_list);
         lv_label_set_text(msg, "No files found");
-        lv_obj_set_style_text_font(msg, &lv_font_montserrat_14, 0);
-        lv_obj_set_style_text_color(msg, lv_color_hex(0x888888), 0);
+        lv_obj_set_style_text_font(msg, UI_FONT_MEDIUM, 0);
+        lv_obj_set_style_text_color(msg, UI_COLOR_TEXT_SECONDARY, 0);
         lv_obj_align(msg, LV_ALIGN_CENTER, 0, 0);
         s_files_loaded = false;
     }

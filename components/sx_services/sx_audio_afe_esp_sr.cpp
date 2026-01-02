@@ -11,7 +11,7 @@
 #include <esp_err.h>
 #include "sx_audio_afe.h"
 
-#ifdef CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE
+#if defined(CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE) || defined(CONFIG_SX_AUDIO_AFE_ESP_SR)
 
 #include <esp_log.h>
 #include <string.h>
@@ -228,7 +228,7 @@ esp_err_t sx_audio_afe_deinit_esp_sr(void) {
 
 } // extern "C"
 
-#else // CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE not defined
+#else // AFE ESP-SR not enabled
 
 // Stub implementations when ESP-SR is not enabled
 // Ensure headers are available for stub functions
@@ -261,5 +261,5 @@ esp_err_t sx_audio_afe_deinit_esp_sr(void) {
 
 } // extern "C"
 
-#endif // CONFIG_SX_AUDIO_AFE_ESP_SR_ENABLE
+#endif // AFE ESP-SR enable
 

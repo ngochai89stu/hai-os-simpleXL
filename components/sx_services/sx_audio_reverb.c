@@ -5,6 +5,10 @@
 #include <stdlib.h>
 #include <math.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -275,4 +279,8 @@ esp_err_t sx_audio_reverb_set_sample_rate(uint32_t sample_rate_hz) {
     ESP_LOGI(TAG, "Reverb sample rate updated to %u Hz", sample_rate_hz);
     return ESP_OK;
 }
+
+#ifdef __cplusplus
+}
+#endif
 

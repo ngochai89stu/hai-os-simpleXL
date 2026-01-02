@@ -265,6 +265,14 @@ menu "SimpleXL Core Configuration"
     endmenu
 
     menu "Feature Configuration"
+        config SX_SELFTEST_ENABLE
+            bool "Enable Smoke Test (Self-Test)"
+            default n
+            help
+                Enable smoke test module to verify hardware and platform after boot.
+                Test includes: boot stability, LVGL init, touch, SD card, audio, heap/PSRAM.
+                Results are printed to log after UI initialization.
+
         config SX_FEATURE_MUSIC_ENABLE
             bool "Enable Music Service"
             default y
@@ -337,6 +345,13 @@ menu "SimpleXL Core Configuration"
     endmenu
 
 endmenu
+
+
+
+
+
+
+
 
 
 

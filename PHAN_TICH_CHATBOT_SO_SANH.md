@@ -626,3 +626,11 @@ if (bits & MAIN_EVENT_SEND_AUDIO) {
 
 *Báo cáo này dựa trên phân tích source code của cả 2 dự án. Mọi thiếu sót đều có evidence từ code comparison.*
 
+
+
+
+
+
+
+
+

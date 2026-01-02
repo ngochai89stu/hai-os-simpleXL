@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,12 +42,36 @@ void sx_event_free_string(char *str);
 void sx_event_string_pool_init(void);
 
 /**
- * @brief Get pool statistics
+ * @brief Pool metrics structure
+ */
+typedef struct {
+    uint32_t total_allocations;    // Total number of allocations attempted
+    uint32_t pool_hits;            // Allocations satisfied from pool
+    uint32_t pool_misses;          // Allocations that couldn't use pool (pool full)
+    uint32_t malloc_fallbacks;      // Allocations that fell back to malloc
+    uint32_t current_usage;         // Current number of used slots
+    uint32_t peak_usage;            // Peak number of used slots
+} sx_event_string_pool_metrics_t;
+
+/**
+ * @brief Get pool statistics (legacy API)
  * 
  * @param used_count Output: number of used slots
  * @param total_count Output: total number of slots
  */
 void sx_event_string_pool_stats(size_t *used_count, size_t *total_count);
+
+/**
+ * @brief Get detailed pool metrics
+ * 
+ * @param metrics Output: detailed metrics structure
+ */
+void sx_event_string_pool_get_metrics(sx_event_string_pool_metrics_t *metrics);
+
+/**
+ * @brief Reset metrics (for testing)
+ */
+void sx_event_string_pool_reset_metrics(void);
 
 #ifdef __cplusplus
 }

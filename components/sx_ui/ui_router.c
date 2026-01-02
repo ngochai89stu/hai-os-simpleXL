@@ -2,8 +2,7 @@
 #include "ui_screen_registry.h"
 
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
 
 #include "sx_dispatcher.h"
 #include "sx_state.h"

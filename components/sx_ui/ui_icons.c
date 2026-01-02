@@ -1,7 +1,6 @@
 #include "ui_icons.h"
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
 
 static const char *TAG = "ui_icons";
 

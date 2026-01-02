@@ -9,6 +9,10 @@
 #include "sx_playlist_manager.h"
 #include "sx_ota_service.h"
 #include "sx_platform.h"
+#include "sx_weather_service.h"
+#include "sx_wifi_service.h"
+#include "sx_display_service.h"
+#include "sx_image_service.h"
 
 #include <esp_log.h>
 #include <string.h>
@@ -612,6 +616,128 @@ cJSON* mcp_tool_upgrade_firmware(cJSON *params, const char *id) {
     return mcp_tool_create_success(id, result);
 }
 
+// Weather MCP Tools
+cJSON* mcp_tool_weather_get_current(cJSON *params, const char *id) {
+    (void)params;
+    
+    // Fetch weather if needed
+    if (sx_weather_needs_update()) {
+        esp_err_t ret = sx_weather_fetch();
+        if (ret != ESP_OK) {
+            return mcp_tool_create_error(id, -32000, "Failed to fetch weather data");
+        }
+    }
+    
+    const sx_weather_info_t *info = sx_weather_get_info();
+    if (!info || !info->valid) {
+        return mcp_tool_create_error(id, -32000, "Weather data not available");
+    }
+    
+    cJSON *result = cJSON_CreateObject();
+    cJSON_AddStringToObject(result, "city", info->city);
+    cJSON_AddStringToObject(result, "description", info->description);
+    cJSON_AddStringToObject(result, "icon_code", info->icon_code);
+    cJSON_AddNumberToObject(result, "temp", info->temp);
+    cJSON_AddNumberToObject(result, "feels_like", info->feels_like);
+    cJSON_AddNumberToObject(result, "humidity", info->humidity);
+    cJSON_AddNumberToObject(result, "pressure", info->pressure);
+    cJSON_AddNumberToObject(result, "wind_speed", info->wind_speed);
+    
+    return mcp_tool_create_success(id, result);
+}
+
+cJSON* mcp_tool_weather_get_forecast(cJSON *params, const char *id) {
+    (void)params;
+    
+    // Note: Forecast requires forecast API endpoint (not implemented in weather service yet)
+    // For now, return current weather as forecast
+    const sx_weather_info_t *info = sx_weather_get_info();
+    if (!info || !info->valid) {
+        return mcp_tool_create_error(id, -32000, "Weather data not available");
+    }
+    
+    cJSON *result = cJSON_CreateObject();
+    cJSON *forecast = cJSON_CreateArray();
+    
+    // Single forecast entry (current weather)
+    cJSON *entry = cJSON_CreateObject();
+    cJSON_AddStringToObject(entry, "city", info->city);
+    cJSON_AddStringToObject(entry, "description", info->description);
+    cJSON_AddStringToObject(entry, "icon_code", info->icon_code);
+    cJSON_AddNumberToObject(entry, "temp", info->temp);
+    cJSON_AddNumberToObject(entry, "feels_like", info->feels_like);
+    cJSON_AddNumberToObject(entry, "humidity", info->humidity);
+    cJSON_AddNumberToObject(entry, "pressure", info->pressure);
+    cJSON_AddNumberToObject(entry, "wind_speed", info->wind_speed);
+    cJSON_AddItemToArray(forecast, entry);
+    
+    cJSON_AddItemToObject(result, "forecast", forecast);
+    cJSON_AddStringToObject(result, "note", "Forecast API not yet implemented, returning current weather");
+    
+    return mcp_tool_create_success(id, result);
+}
+
+cJSON* mcp_tool_weather_set_city(cJSON *params, const char *id) {
+    cJSON *city = cJSON_GetObjectItem(params, "city");
+    if (!city || !cJSON_IsString(city)) {
+        return mcp_tool_create_error(id, -32602, "Invalid params: city required");
+    }
+    
+    esp_err_t ret = sx_weather_set_city(city->valuestring);
+    if (ret != ESP_OK) {
+        return mcp_tool_create_error(id, -32000, "Failed to set city");
+    }
+    
+    // Fetch weather for new city
+    ret = sx_weather_fetch();
+    if (ret != ESP_OK) {
+        return mcp_tool_create_error(id, -32000, "Failed to fetch weather for new city");
+    }
+    
+    cJSON *result = cJSON_CreateObject();
+    cJSON_AddBoolToObject(result, "success", true);
+    cJSON_AddStringToObject(result, "city", city->valuestring);
+    
+    return mcp_tool_create_success(id, result);
+}
+
+// System MCP Tools
+cJSON* mcp_tool_system_reconfigure_wifi(cJSON *params, const char *id) {
+    cJSON *ssid = cJSON_GetObjectItem(params, "ssid");
+    cJSON *password = cJSON_GetObjectItem(params, "password");
+    
+    if (!ssid || !cJSON_IsString(ssid)) {
+        return mcp_tool_create_error(id, -32602, "Invalid params: ssid required");
+    }
+    
+    const char *password_str = password && cJSON_IsString(password) ? password->valuestring : NULL;
+    
+    // Disconnect current WiFi if connected
+    if (sx_wifi_is_connected()) {
+        sx_wifi_disconnect();
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Wait for disconnect
+    }
+    
+    // Connect to new WiFi
+    esp_err_t ret = sx_wifi_connect(ssid->valuestring, password_str);
+    
+    cJSON *result = cJSON_CreateObject();
+    cJSON_AddBoolToObject(result, "success", ret == ESP_OK);
+    cJSON_AddStringToObject(result, "ssid", ssid->valuestring);
+    if (ret != ESP_OK) {
+        cJSON_AddStringToObject(result, "error", esp_err_to_name(ret));
+    } else {
+        // Wait a bit for connection to establish
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        if (sx_wifi_is_connected()) {
+            cJSON_AddStringToObject(result, "ip_address", sx_wifi_get_ip_address());
+            cJSON_AddNumberToObject(result, "rssi", sx_wifi_get_rssi());
+        }
+    }
+    
+    return mcp_tool_create_success(id, result);
+}
+
 cJSON* mcp_tool_screen_get_info(cJSON *params, const char *id) {
     (void)params;
     
@@ -624,13 +750,61 @@ cJSON* mcp_tool_screen_get_info(cJSON *params, const char *id) {
 }
 
 cJSON* mcp_tool_screen_snapshot(cJSON *params, const char *id) {
-    (void)params;
+    cJSON *url = cJSON_GetObjectItem(params, "url");
     
-    // Take screenshot and upload (placeholder)
-    // This requires screen capture and file upload functionality
+    if (!url || !cJSON_IsString(url)) {
+        return mcp_tool_create_error(id, -32602, "Invalid params: url required");
+    }
+    
+    // Initialize display service if needed
+    sx_display_service_init();
+    
+    // Get screen dimensions from platform (Section 7.5 SIMPLEXL_ARCH v1.3: services cannot call LVGL)
+    uint16_t width = 0;
+    uint16_t height = 0;
+    esp_err_t ret = sx_platform_get_screen_size(&width, &height);
+    if (ret != ESP_OK || width == 0 || height == 0) {
+        return mcp_tool_create_error(id, -32000, "Failed to get screen dimensions");
+    }
+    
+    // Capture screen
+    size_t buffer_size = width * height * 2; // RGB565 = 2 bytes per pixel
+    uint8_t *screen_buffer = (uint8_t *)malloc(buffer_size);
+    if (!screen_buffer) {
+        return mcp_tool_create_error(id, -32000, "Failed to allocate screen buffer");
+    }
+    
+    ret = sx_display_capture_screen(screen_buffer, width, height);
+    if (ret != ESP_OK) {
+        free(screen_buffer);
+        return mcp_tool_create_error(id, -32000, "Failed to capture screen");
+    }
+    
+    // Encode to JPEG
+    uint8_t *jpeg_data = NULL;
+    size_t jpeg_size = 0;
+    ret = sx_display_encode_jpeg(screen_buffer, width, height, 80, &jpeg_data, &jpeg_size);
+    free(screen_buffer);
+    
+    if (ret != ESP_OK) {
+        cJSON *result = cJSON_CreateObject();
+        cJSON_AddBoolToObject(result, "success", false);
+        cJSON_AddStringToObject(result, "message", "JPEG encoding not yet implemented - requires ESP32 JPEG encoder");
+        cJSON_AddStringToObject(result, "status", "encoding_not_implemented");
+        cJSON_AddStringToObject(result, "upload_url", url->valuestring);
+        return mcp_tool_create_success(id, result);
+    }
+    
+    // Upload JPEG
+    ret = sx_display_upload_jpeg(jpeg_data, jpeg_size, url->valuestring);
+    free(jpeg_data);
+    
     cJSON *result = cJSON_CreateObject();
-    cJSON_AddBoolToObject(result, "success", false);
-    cJSON_AddStringToObject(result, "message", "Screen snapshot not yet implemented");
+    cJSON_AddBoolToObject(result, "success", ret == ESP_OK);
+    cJSON_AddStringToObject(result, "upload_url", url->valuestring);
+    if (ret != ESP_OK) {
+        cJSON_AddStringToObject(result, "error", esp_err_to_name(ret));
+    }
     
     return mcp_tool_create_success(id, result);
 }
@@ -643,15 +817,46 @@ cJSON* mcp_tool_screen_preview_image(cJSON *params, const char *id) {
         return mcp_tool_create_error(id, -32602, "Invalid params: url required");
     }
     
-    // Preview image on screen using image service
-    // Note: This requires sx_image_service to have preview API
     int timeout_ms = timeout && cJSON_IsNumber(timeout) ? timeout->valueint : 5000;
     
+    // Initialize display service if needed
+    sx_display_service_init();
+    
+    // Download image
+    uint8_t *image_data = NULL;
+    size_t image_size = 0;
+    esp_err_t ret = sx_display_download_image(url->valuestring, &image_data, &image_size);
+    if (ret != ESP_OK) {
+        return mcp_tool_create_error(id, -32000, "Failed to download image");
+    }
+    
+    // Decode image
+    sx_image_info_t info = {0};
+    uint8_t *decoded_data = NULL;
+    ret = sx_image_load_from_memory(image_data, image_size, &info, &decoded_data);
+    free(image_data);
+    
+    if (ret != ESP_OK || !decoded_data) {
+        return mcp_tool_create_error(id, -32000, "Failed to decode image");
+    }
+    
+    // Display image (will copy data internally)
+    ret = sx_display_show_image(decoded_data, info.width, info.height, timeout_ms);
+    
+    // Free decoded data (sx_display_show_image copies it)
+    free(decoded_data);
+    
     cJSON *result = cJSON_CreateObject();
-    cJSON_AddBoolToObject(result, "success", false);
-    cJSON_AddStringToObject(result, "message", "Image preview service integration needed");
+    cJSON_AddBoolToObject(result, "success", ret == ESP_OK);
     cJSON_AddStringToObject(result, "url", url->valuestring);
     cJSON_AddNumberToObject(result, "timeout_ms", timeout_ms);
+    if (ret == ESP_OK) {
+        cJSON_AddNumberToObject(result, "width", info.width);
+        cJSON_AddNumberToObject(result, "height", info.height);
+    } else {
+        cJSON_AddStringToObject(result, "error", esp_err_to_name(ret));
+        free(decoded_data); // Free if display failed
+    }
     
     return mcp_tool_create_success(id, result);
 }
@@ -741,6 +946,24 @@ esp_err_t sx_mcp_tools_register_all(void) {
         "Preview an image on the screen",
         mcp_tool_screen_preview_image, true);
     
+    // Weather MCP Tools
+    sx_mcp_server_register_tool("self.weather.get_current",
+        "Get current weather. params: {}",
+        mcp_tool_weather_get_current, false);
+    
+    sx_mcp_server_register_tool("self.weather.get_forecast",
+        "Get weather forecast. params: {}",
+        mcp_tool_weather_get_forecast, false);
+    
+    sx_mcp_server_register_tool("self.weather.set_city",
+        "Set city for weather. params: {city: string}",
+        mcp_tool_weather_set_city, false);
+    
+    // System MCP Tools
+    sx_mcp_server_register_tool("self.system.reconfigure_wifi",
+        "Reconfigure WiFi connection. params: {ssid: string, password?: string}",
+        mcp_tool_system_reconfigure_wifi, true);
+    
     // Navigation tools
     extern esp_err_t sx_mcp_tools_navigation_register(void);
     sx_mcp_tools_navigation_register();
@@ -749,7 +972,7 @@ esp_err_t sx_mcp_tools_register_all(void) {
     extern esp_err_t sx_mcp_tools_ir_register(void);
     sx_mcp_tools_ir_register();
     
-    ESP_LOGI(TAG, "MCP tools registered (SD Music, Music Online, Navigation, IR Control, User-Only)");
+    ESP_LOGI(TAG, "MCP tools registered (SD Music, Music Online, Navigation, IR Control, Weather, System, User-Only)");
     return ESP_OK;
 }
 

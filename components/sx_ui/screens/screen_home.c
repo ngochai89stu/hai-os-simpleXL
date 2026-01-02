@@ -1,8 +1,7 @@
 #include "screen_home.h"
 
 #include <esp_log.h>
-#include "lvgl.h"
-#include "esp_lvgl_port.h"
+#include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
 #include "ui_router.h"
 #include "ui_screen_registry.h"
 #include "sx_dispatcher.h"
@@ -10,6 +9,7 @@
 #include "sx_ui_verify.h"
 #include "screen_common.h"
 #include "ui_icons.h"
+#include "ui_theme_tokens.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/timers.h>
@@ -59,10 +59,10 @@ static lv_obj_t* create_home_menu_item(lv_obj_t *parent, const home_menu_item_t 
     // Create grid item (card) - Web demo style
     lv_obj_t *item = lv_obj_create(parent);
     lv_obj_set_size(item, LV_PCT(48), 110);  // 2 columns, slightly taller
-    lv_obj_set_style_bg_color(item, lv_color_hex(0x2a2a2a), LV_PART_MAIN);  // Darker card background
-    lv_obj_set_style_bg_color(item, lv_color_hex(0x3a3a3a), LV_PART_MAIN | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(item, UI_COLOR_BG_SECONDARY, LV_PART_MAIN);  // Darker card background
+    lv_obj_set_style_bg_color(item, UI_COLOR_BG_PRESSED, LV_PART_MAIN | LV_STATE_PRESSED);
     lv_obj_set_style_border_width(item, 0, LV_PART_MAIN);  // No border for cleaner look
-    lv_obj_set_style_pad_all(item, 15, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(item, UI_SPACE_LG, LV_PART_MAIN);
     lv_obj_set_style_radius(item, 12, LV_PART_MAIN);  // Rounded corners
     lv_obj_set_user_data(item, (void *)(intptr_t)menu_item->screen_id);
     lv_obj_add_event_cb(item, home_menu_item_click_cb, LV_EVENT_CLICKED, NULL);
@@ -70,15 +70,15 @@ static lv_obj_t* create_home_menu_item(lv_obj_t *parent, const home_menu_item_t 
     // Icon using LVGL symbols - larger and centered
     lv_obj_t *icon = ui_icon_create(item, menu_item->icon_type, 32);
     if (icon != NULL) {
-        lv_obj_set_style_text_color(icon, lv_color_hex(0x5b7fff), 0);  // Primary blue
+        lv_obj_set_style_text_color(icon, UI_COLOR_PRIMARY, 0);  // Primary blue
         lv_obj_align(icon, LV_ALIGN_TOP_MID, 0, 10);
     }
     
     // Title - larger font
     lv_obj_t *label = lv_label_create(item);
     lv_label_set_text(label, menu_item->title);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(label, UI_FONT_MEDIUM, 0);
+    lv_obj_set_style_text_color(label, UI_COLOR_TEXT_PRIMARY, 0);
     lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, -10);
     lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(label, LV_PCT(90));
@@ -97,8 +97,8 @@ static void on_create(void) {
     
     s_container = container;
     
-    // Set dark background (web demo style)
-    lv_obj_set_style_bg_color(container, lv_color_hex(0x1a1a1a), LV_PART_MAIN);
+    // Set dark background using token
+    lv_obj_set_style_bg_color(container, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     
     // Create grid container (2x3 + 1 chatbot = 7 items) - full screen
     s_grid = lv_obj_create(container);
@@ -106,11 +106,12 @@ static void on_create(void) {
     lv_obj_align(s_grid, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_style_bg_opa(s_grid, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_grid, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(s_grid, 15, LV_PART_MAIN);  // More padding
+    lv_obj_set_style_pad_all(s_grid, UI_SPACE_LG, LV_PART_MAIN);  // More padding
+    lv_obj_set_style_bg_color(s_grid, UI_COLOR_BG_PRIMARY, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(s_grid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(s_grid, 15, LV_PART_MAIN);  // More spacing
-    lv_obj_set_style_pad_column(s_grid, 15, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(s_grid, UI_SPACE_LG, LV_PART_MAIN);  // More spacing
+    lv_obj_set_style_pad_column(s_grid, UI_SPACE_LG, LV_PART_MAIN);
     
     // Add home menu items (2x3 grid + chatbot)
     for (int i = 0; i < sizeof(s_home_menu_items) / sizeof(s_home_menu_items[0]); i++) {

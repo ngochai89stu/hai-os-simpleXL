@@ -3,7 +3,7 @@
 #include <esp_err.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include "lvgl.h"  // For lv_obj_t
+// P0.1: Removed lvgl.h include - UI task handles LVGL operations
 
 #ifdef __cplusplus
 extern "C" {
@@ -42,8 +42,8 @@ sx_theme_type_t sx_theme_get_type(void);
 // Get theme colors for current theme
 const sx_theme_colors_t* sx_theme_get_colors(void);
 
-// Apply theme to an object (helper function)
-esp_err_t sx_theme_apply_to_object(lv_obj_t *obj, bool is_container);
+// P0.1: sx_theme_apply_to_object() removed - UI task should apply theme directly via LVGL
+// UI components receive SX_EVT_THEME_CHANGED event and apply colors via LVGL APIs
 
 // Register theme change callback
 typedef void (*sx_theme_change_cb_t)(sx_theme_type_t new_theme);
