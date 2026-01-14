@@ -65,7 +65,7 @@ void test_state_get_set(void) {
 }
 
 // Test event queue full scenario (drop events)
-void test_event_queue_full(void) {
+void test_event_queue_full_stress(void) {
     // Fill up the queue (32 events for normal priority)
     sx_event_t evt = {
         .type = SX_EVT_UI_INPUT,
@@ -89,7 +89,7 @@ void test_event_queue_full(void) {
 }
 
 // Test state mutex protection (thread safety)
-void test_state_thread_safety(void) {
+void test_state_thread_safety_stress(void) {
     // This test verifies that state get/set operations are thread-safe
     // In real scenario, would need multiple threads
     sx_state_t state;

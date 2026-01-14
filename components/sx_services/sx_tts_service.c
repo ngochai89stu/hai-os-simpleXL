@@ -5,6 +5,7 @@
 #include <esp_log.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -79,7 +80,8 @@ esp_err_t sx_tts_service_init(const sx_tts_config_t *config) {
     }
     
     // Create request queue (priority queue - higher priority first)
-    s_tts_queue = xQueueCreate(10, sizeof(sx_tts_request_t));
+    // Phase 0: Increase queue size to reduce drop
+    s_tts_queue = xQueueCreate(20, sizeof(sx_tts_request_t));
     if (!s_tts_queue) {
         vSemaphoreDelete(s_tts_mutex);
         return ESP_ERR_NO_MEM;
@@ -183,6 +185,15 @@ esp_err_t sx_tts_cancel(void) {
         // Discard queued requests
     }
     
+    // Phase 1: Post state update event
+    sx_event_t evt = {
+        .type = SX_EVT_TTS_STATE_UPDATE,
+        .arg0 = 0,  // speaking = false
+        .arg1 = 0,
+        .ptr = NULL
+    };
+    sx_dispatcher_post_event(&evt);
+    
     ESP_LOGI(TAG, "TTS cancelled");
     return ESP_OK;
 }
@@ -257,6 +268,15 @@ static void sx_tts_task(void *arg) {
         // Mark as speaking
         if (xSemaphoreTake(s_tts_mutex, portMAX_DELAY) == pdTRUE) {
             s_speaking = true;
+            
+            // Phase 1: Post state update event
+            sx_event_t evt = {
+                .type = SX_EVT_TTS_STATE_UPDATE,
+                .arg0 = 1,  // speaking = true
+                .arg1 = 0,
+                .ptr = NULL
+            };
+            sx_dispatcher_post_event(&evt);
             s_current_request = request;
             xSemaphoreGive(s_tts_mutex);
         }
@@ -319,11 +339,43 @@ static esp_err_t sx_tts_synthesize(const sx_tts_request_t *request) {
     return ESP_OK;
 }
 
+// Phase 0: URL encode helper function
+static char* url_encode(const char *value) {
+    if (!value) return NULL;
+    
+    size_t len = strlen(value);
+    char *encoded = (char *)malloc(len * 3 + 1);
+    if (!encoded) return NULL;
+    
+    size_t pos = 0;
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)value[i];
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded[pos++] = c;
+        } else {
+            encoded[pos++] = '%';
+            encoded[pos++] = "0123456789ABCDEF"[c >> 4];
+            encoded[pos++] = "0123456789ABCDEF"[c & 0x0F];
+        }
+    }
+    encoded[pos] = '\0';
+    return encoded;
+}
+
 static esp_err_t sx_tts_http_request(const char *text, int16_t **audio_data, size_t *audio_size, uint32_t *sample_rate) {
+    // Phase 0: URL encode text to prevent issues with special characters
+    char *encoded_text = url_encode(text);
+    if (!encoded_text) {
+        ESP_LOGE(TAG, "Failed to URL encode text");
+        return ESP_ERR_NO_MEM;
+    }
+    
     // Build request URL
     char url[512];
-    snprintf(url, sizeof(url), "%s?text=%s", s_endpoint_url, text);
-    // Note: In production, URL encoding would be needed
+    snprintf(url, sizeof(url), "%s?text=%s", s_endpoint_url, encoded_text);
+    
+    // Free encoded text after use
+    free(encoded_text);
     
     // Create HTTP client
     esp_http_client_config_t config = {
@@ -396,6 +448,8 @@ static esp_err_t sx_tts_http_request(const char *text, int16_t **audio_data, siz
     
     return ESP_OK;
 }
+
+
 
 
 

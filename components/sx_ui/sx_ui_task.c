@@ -19,6 +19,41 @@
 #include "screens/screen_display_helper.h"  // P0.1: Display service event handler
 #include "sx_ui_verify.h"
 
+// Phase 2: Screen domain mapping for dirty-mask filtering
+typedef struct {
+    ui_screen_id_t screen_id;
+    uint32_t relevant_domains;  // Bitmask of SX_STATE_DIRTY_*
+} screen_domain_map_t;
+
+// Map screens to their relevant state domains (optimization: only update when relevant domains change)
+static const screen_domain_map_t s_screen_domains[] = {
+    {SCREEN_ID_MUSIC_PLAYER, SX_STATE_DIRTY_AUDIO | SX_STATE_DIRTY_UI},
+    {SCREEN_ID_MUSIC_ONLINE_LIST, SX_STATE_DIRTY_UI},
+    {SCREEN_ID_SD_CARD_MUSIC, SX_STATE_DIRTY_UI},  // Note: SD domain not yet in state, use UI for now
+    {SCREEN_ID_RADIO, SX_STATE_DIRTY_AUDIO | SX_STATE_DIRTY_UI},
+    {SCREEN_ID_WIFI_SETUP, SX_STATE_DIRTY_WIFI | SX_STATE_DIRTY_UI},
+    {SCREEN_ID_BLUETOOTH_SETTING, SX_STATE_DIRTY_UI},
+    {SCREEN_ID_CHAT, SX_STATE_DIRTY_UI},
+    {SCREEN_ID_DIAGNOSTICS, SX_STATE_DIRTY_UI | SX_STATE_DIRTY_SYSTEM},
+    {SCREEN_ID_SYSTEM_INFO, SX_STATE_DIRTY_UI | SX_STATE_DIRTY_SYSTEM},
+    {SCREEN_ID_EQUALIZER, SX_STATE_DIRTY_AUDIO | SX_STATE_DIRTY_UI},
+    {SCREEN_ID_AUDIO_EFFECTS, SX_STATE_DIRTY_AUDIO | SX_STATE_DIRTY_UI},
+    // Default: All other screens listen to UI domain only
+};
+
+#define SCREEN_DOMAIN_MAP_SIZE (sizeof(s_screen_domains) / sizeof(s_screen_domains[0]))
+
+// Get relevant domains for a screen (default: UI only)
+static uint32_t get_screen_domains(ui_screen_id_t screen_id) {
+    for (size_t i = 0; i < SCREEN_DOMAIN_MAP_SIZE; i++) {
+        if (s_screen_domains[i].screen_id == screen_id) {
+            return s_screen_domains[i].relevant_domains;
+        }
+    }
+    // Default: UI domain only (most screens only care about UI state)
+    return SX_STATE_DIRTY_UI;
+}
+
 static const char *TAG = "sx_ui";
 
 #if LVGL_VERSION_MAJOR != 9
@@ -247,18 +282,28 @@ static void sx_ui_task(void *arg) {
             last_screen = target_screen;
         }
         
-        // Update current screen UI from state (if screen supports it and state changed)
+        // Phase 2: Update current screen UI from state (if screen supports it and state changed)
+        // Optimized: Use dirty_mask to only update relevant UI elements
         if (state_changed) {
             last_state_seq = state.seq;
             ui_screen_id_t current_screen = ui_router_get_current_screen();
             if (current_screen != SCREEN_ID_MAX) {
                 const ui_screen_callbacks_t *callbacks = ui_screen_registry_get(current_screen);
                 if (callbacks && callbacks->on_update) {
-                    // Ensure screen updates are performed under LVGL lock.
-                    if (lvgl_port_lock(0)) {
-                    callbacks->on_update(&state);
-                        lvgl_port_unlock();
+                    // Phase 2: Only update if relevant domains changed (dirty_mask domain filtering)
+                    // Get screen's relevant domains and check if dirty_mask matches
+                    uint32_t screen_domains = get_screen_domains(current_screen);
+                    uint32_t dirty_mask = state.dirty_mask;
+                    
+                    // Only update if at least one relevant domain changed
+                    if ((dirty_mask & screen_domains) != 0) {
+                        // Ensure screen updates are performed under LVGL lock.
+                        if (lvgl_port_lock(0)) {
+                            callbacks->on_update(&state);
+                            lvgl_port_unlock();
+                        }
                     }
+                    // Optimization: Skip update if no relevant domains changed (e.g., WiFi change on music screen)
                 }
             }
         }

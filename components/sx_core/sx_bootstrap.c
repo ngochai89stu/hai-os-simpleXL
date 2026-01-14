@@ -49,6 +49,7 @@
 #include "sx_audio_protocol_bridge.h"
 #include "sx_lazy_loader.h"
 #include "sx_selftest.h"
+#include "sx_service_if.h"
 
 static const char *TAG = "sx_bootstrap";
 
@@ -197,6 +198,10 @@ esp_err_t sx_bootstrap_start(void) {
         .sclk_gpio = 21,  // SD SCLK
         .cs_gpio = 10,    // SD CS
     };
+    // Phase 1: SD service now initialized via Service Registry
+    // (commented out - handled by sx_sd_service_lifecycle.c)
+    // Note: SD mount status will be checked after registry init
+    /*
     esp_err_t sd_ret = sx_sd_service_init(&sd_cfg);
     if (sd_ret != ESP_OK) {
         ESP_LOGW(TAG, "SD service init failed (non-critical): %s", esp_err_to_name(sd_ret));
@@ -208,6 +213,12 @@ esp_err_t sx_bootstrap_start(void) {
             ESP_LOGI(TAG, "SD mounted");
             sx_assets_set_sd_ready(true);
         }
+    }
+    */
+    // Check SD mount status after registry init
+    if (sx_sd_is_mounted()) {
+        sx_assets_set_sd_ready(true);
+        ESP_LOGI(TAG, "SD mounted (via registry)");
     }
 
     // 7) Phase 3/4: Init asset loader (does not mount, only prepares)
@@ -665,12 +676,16 @@ esp_err_t sx_bootstrap_start(void) {
         .timeout_ms = 10000,
         .default_priority = SX_TTS_PRIORITY_NORMAL,
     };
+    // Phase 1: TTS service now initialized via Service Registry
+    // (commented out - handled by sx_tts_service_lifecycle.c)
+    /*
     esp_err_t tts_ret = sx_tts_service_init(&tts_cfg);
     if (tts_ret != ESP_OK) {
         ESP_LOGW(TAG, "TTS service init failed (non-critical): %s", esp_err_to_name(tts_ret));
     } else {
         ESP_LOGI(TAG, "TTS service initialized");
     }
+    */
     */
     
     // Navigation Service - MOVED TO LAZY LOADING

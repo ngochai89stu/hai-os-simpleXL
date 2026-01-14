@@ -11,7 +11,11 @@
 #include "sx_navigation_service.h"
 #include "sx_navigation_ble.h"
 #include "sx_settings_service.h"
-#include "sx_tts_service.h"
+// Phase 1: Remove direct include (break circular dependency)
+// #include "sx_tts_service.h"  // Removed - use events instead
+#include "sx_dispatcher.h"
+#include "sx_event.h"
+#include "sx_event_string_pool.h"
 #include "ui_theme_tokens.h"
 
 static const char *TAG = "screen_google_navigation";
@@ -478,8 +482,17 @@ static void trigger_overspeed_alert(void) {
         lv_timer_set_repeat_count(s_overspeed_timer, 5);
     }
     
-    // Audio alert: TTS
-    sx_tts_speak_simple("Cảnh báo vượt tốc độ");
+    // Phase 1: Post TTS speak request event instead of direct call
+    char *text_copy = sx_event_alloc_string("Cảnh báo vượt tốc độ");
+    if (text_copy != NULL) {
+        sx_event_t tts_evt = {
+            .type = SX_EVT_TTS_SPEAK_REQUEST,
+            .arg0 = 0,
+            .arg1 = 0,
+            .ptr = text_copy
+        };
+        sx_dispatcher_post_event(&tts_evt);
+    }
 }
 
 static void overspeed_flash_cb(lv_timer_t *timer) {

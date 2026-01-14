@@ -170,3 +170,5 @@ Dự án **hai-os-simpleXL** hiện đã có trên GitHub nhưng còn thiếu m�
 **Ngày tạo:** 2025-01-02
 **Cập nhật:** 2025-01-02
 
+
+

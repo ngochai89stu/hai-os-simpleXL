@@ -1,21 +1,55 @@
 #include "sx_metrics.h"
 
 #include <string.h>
+#include <stdio.h>  // for FILE operations
+#include <sys/param.h>
+#include <unistd.h>
 #include <esp_log.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/task.h>  // Phase 2: xTaskCreate, xTaskGetTickCount, vTaskDelayUntil
 #include <freertos/semphr.h>
 #include <esp_heap_caps.h>
 
 static const char *TAG = "sx_metrics";
 
 // P2.6: Metrics storage (Section 9.1 SIMPLEXL_ARCH v1.3)
-static sx_metrics_t s_metrics;
+static sx_metrics_t s_metrics;  // Global metrics
+
+// Forward declaration for internal helper
+static void metrics_write_kv(FILE *f, const char *key, uint32_t value);
 static StaticSemaphore_t s_metrics_mutex_buf;
 static SemaphoreHandle_t s_metrics_mutex = NULL;
 
 static void init_mutex(void) {
     if (s_metrics_mutex == NULL) {
         s_metrics_mutex = xSemaphoreCreateMutexStatic(&s_metrics_mutex_buf);
+    }
+}
+
+// Phase 2: Periodic metrics update task
+static void sx_metrics_update_task(void *arg) {
+    (void)arg;
+    TickType_t last_wake_time = xTaskGetTickCount();
+    const TickType_t interval = pdMS_TO_TICKS(5000);  // Update every 5 seconds
+    
+    ESP_LOGI(TAG, "Metrics update task started");
+    
+    for (;;) {
+        // Update heap metrics
+        size_t heap_free = esp_get_free_heap_size();
+        size_t heap_min = esp_get_minimum_free_heap_size();
+        sx_metrics_update_heap(heap_free, heap_min);
+        
+        #ifdef CONFIG_SPIRAM_SUPPORT
+        // Update PSRAM metrics
+        size_t psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        // Note: ESP-IDF doesn't have get_minimum_free_psram, so we track current as min
+        // In practice, we can use largest_free_block as approximation
+        size_t psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+        sx_metrics_update_psram(psram_free, psram_free - psram_largest);  // Approximate min
+        #endif
+        
+        vTaskDelayUntil(&last_wake_time, interval);
     }
 }
 
@@ -40,6 +74,14 @@ bool sx_metrics_init(void) {
     s_metrics.psram_free_current = 0;
     s_metrics.psram_free_min = 0;
     #endif
+    
+    // Phase 2: Start periodic update task (low priority, runs every 5 seconds)
+    BaseType_t ret = xTaskCreate(sx_metrics_update_task, "metrics_upd", 2048, NULL, 1, NULL);
+    if (ret != pdPASS) {
+        ESP_LOGW(TAG, "Failed to create metrics update task (non-critical)");
+    } else {
+        ESP_LOGI(TAG, "Metrics update task created");
+    }
     
     ESP_LOGI(TAG, "Metrics system initialized");
     return true;
@@ -188,6 +230,98 @@ void sx_metrics_update_psram(uint32_t free_current, uint32_t free_min) {
     xSemaphoreGive(s_metrics_mutex);
 }
 
+// Phase-3: Audio helpers implementation
+void sx_metrics_inc_audio_underrun(void) {
+    if (s_metrics_mutex == NULL) return;
+    xSemaphoreTake(s_metrics_mutex, portMAX_DELAY);
+    s_metrics.audio_underrun_total++;
+    xSemaphoreGive(s_metrics_mutex);
+}
+
+void sx_metrics_inc_audio_recovery(void) {
+    if (s_metrics_mutex == NULL) return;
+    xSemaphoreTake(s_metrics_mutex, portMAX_DELAY);
+    s_metrics.audio_recovery_total++;
+    xSemaphoreGive(s_metrics_mutex);
+}
+
+// Phase-3: Wi-Fi helpers implementation
+void sx_metrics_update_wifi_reconnect(uint32_t reconnect_ms) {
+    if (s_metrics_mutex == NULL) return;
+    xSemaphoreTake(s_metrics_mutex, portMAX_DELAY);
+    s_metrics.wifi_reconnect_ms_last = reconnect_ms;
+    if (reconnect_ms > s_metrics.wifi_reconnect_ms_max) {
+        s_metrics.wifi_reconnect_ms_max = reconnect_ms;
+    }
+    xSemaphoreGive(s_metrics_mutex);
+}
+
+// Phase-3: Prometheus exporter
+esp_err_t sx_metrics_export_prom(const char *file_path) {
+    if (file_path == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    FILE *f = fopen(file_path, "w");
+    if (!f) {
+        ESP_LOGE(TAG, "Failed to open %s for write", file_path);
+        return ESP_FAIL;
+    }
+    sx_metrics_t m;
+    sx_metrics_get(&m);
+
+    // Phase 4: Prometheus format with proper metric types and labels
+    // Format: metric_name{label="value"} value timestamp
+    
+    #define WRITE_GAUGE(name, val) fprintf(f, "%s %u\n", (name), (unsigned)(val))
+    #define WRITE_COUNTER(name, val) fprintf(f, "%s_total %u\n", (name), (unsigned)(val))
+
+    // UI metrics (gauges)
+    WRITE_GAUGE("ui_render_ms_last", m.ui_render_ms_last);
+    WRITE_GAUGE("ui_render_ms_avg", m.ui_render_ms_avg);
+    WRITE_GAUGE("ui_render_ms_max", m.ui_render_ms_max);
+    WRITE_COUNTER("ui_frames_total", m.ui_frames_total);
+
+    // Audio metrics (counters)
+    WRITE_COUNTER("audio_underrun_total", m.audio_underrun_total);
+    WRITE_COUNTER("audio_recovery_total", m.audio_recovery_total);
+
+    // WiFi metrics (gauges)
+    WRITE_GAUGE("wifi_reconnect_ms_last", m.wifi_reconnect_ms_last);
+    WRITE_GAUGE("wifi_reconnect_ms_max", m.wifi_reconnect_ms_max);
+
+    // Memory metrics (gauges)
+    WRITE_GAUGE("heap_free_min_bytes", m.heap_free_min);
+    WRITE_GAUGE("heap_free_current_bytes", m.heap_free_current);
+    WRITE_GAUGE("psram_free_min_bytes", m.psram_free_min);
+    WRITE_GAUGE("psram_free_current_bytes", m.psram_free_current);
+
+    // State metrics
+    WRITE_GAUGE("state_version", m.state_version);
+    WRITE_COUNTER("state_updates_total", m.state_updates_total);
+
+    // Event metrics with priority labels
+    for (int p = 0; p < 4; p++) {
+        const char *priority_name = (p == 0) ? "low" : 
+                                    (p == 1) ? "normal" : 
+                                    (p == 2) ? "high" : "critical";
+        fprintf(f, "evt_posted_total{priority=\"%s\"} %u\n", priority_name, (unsigned)m.evt_posted_total[p]);
+        fprintf(f, "evt_dropped_total{priority=\"%s\"} %u\n", priority_name, (unsigned)m.evt_dropped_total[p]);
+        fprintf(f, "evt_coalesced_total{priority=\"%s\"} %u\n", priority_name, (unsigned)m.evt_coalesced_total[p]);
+        fprintf(f, "queue_depth{priority=\"%s\"} %u\n", priority_name, (unsigned)m.queue_depth[p]);
+    }
+    
+    WRITE_COUNTER("evt_processed_total", m.evt_processed_total);
+
+    #undef WRITE_GAUGE
+    #undef WRITE_COUNTER
+
+    fclose(f);
+    ESP_LOGI(TAG, "Metrics exported to %s (Prometheus format)", file_path);
+    return ESP_OK;
+}
+
+#undef WRITE_KV
+
 void sx_metrics_dump(void) {
     if (s_metrics_mutex == NULL) {
         return;
@@ -235,6 +369,8 @@ void sx_metrics_dump(void) {
     }
     ESP_LOGI(TAG, "===================");
 }
+
+
 
 
 

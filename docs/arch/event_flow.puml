@@ -1,0 +1,29 @@
+@startuml Event_Flow
+
+title SimpleXL Event-Driven Flow (UI -> Core -> Services)
+
+actor User
+participant "LVGL UI (sx_ui)" as UI
+participant "Dispatcher (sx_dispatcher)" as DISP
+participant "Orchestrator (sx_orchestrator)" as ORCH
+participant "Event Handler Registry" as REG
+participant "Service (sx_services)" as SVC
+
+User -> UI: Touch / Voice / Button
+UI -> DISP: sx_dispatcher_post_event(SX_EVT_UI_INPUT)
+
+loop Poll events
+  ORCH -> DISP: sx_dispatcher_poll_event()
+  DISP --> ORCH: evt
+  ORCH -> REG: sx_event_handler_process(evt)
+  REG -> SVC: call handler function
+  SVC -> DISP: sx_dispatcher_set_state(state)
+  ORCH -> DISP: sx_dispatcher_set_state(updated)
+end
+
+loop UI frame
+  UI -> DISP: sx_dispatcher_get_state(snapshot)
+  UI -> UI: callbacks->on_update(snapshot)
+end
+
+@enduml

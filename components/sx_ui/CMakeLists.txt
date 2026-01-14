@@ -68,18 +68,20 @@ idf_component_register(
         "ui_helpers"
         "ui_components"
         "../sx_assets/generated"  # Generated image files (chỉ sx_ui được include)
-    PRIV_INCLUDE_DIRS
-        "../sx_services/include"
+    # Phase 1: Removed PRIV_INCLUDE_DIRS "../sx_services/include" (break circular dependency)
+    # UI now communicates with services via events/state only
     REQUIRES
         sx_core
         sx_platform
         sx_assets
-        sx_services
+        # Phase 1: Removed sx_services from REQUIRES (no direct dependencies)
+        # sx_services  # Removed - use events/state instead
         esp_lvgl_port
     PRIV_REQUIRES
         esp_http_client
         json
-        sx_services
+        # Phase 1: Removed sx_services from PRIV_REQUIRES (no direct includes)
+        # sx_services  # Removed - use events/state instead
         # These are needed because service headers included in .c files depend on them
 )
 
@@ -87,9 +89,9 @@ idf_component_register(
 # This ensures that only sx_ui component can include LVGL headers
 target_compile_definitions(${COMPONENT_LIB} PRIVATE SX_COMPONENT_SX_UI=1)
 
-# Workaround for static archive resolution / dependency cycles between component libs
-# Giúp linker resolve symbol qua nhiều pass khi có vòng phụ thuộc giữa các static libs (sx_ui <-> sx_services)
-set_property(TARGET ${COMPONENT_LIB} APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
+# Phase 1: Removed LINK_INTERFACE_MULTIPLICITY workaround (circular dependency broken!)
+# No longer needed since sx_ui and sx_services are decoupled via events/state
+# set_property(TARGET ${COMPONENT_LIB} APPEND PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
 
 # P1.1: Add runtime assert config (Section 7.3 SIMPLEXL_ARCH v1.3)
 # CONFIG_SX_ENABLE_UI_THREAD_ASSERT is automatically defined by Kconfig

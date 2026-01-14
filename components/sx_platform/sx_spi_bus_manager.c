@@ -34,8 +34,9 @@ void sx_spi_bus_lock(void) {
         }
     }
 
-    if (xSemaphoreTake(s_spi_bus_mutex, portMAX_DELAY) != pdTRUE) {
-        ESP_LOGE(TAG, "Failed to take SPI bus mutex");
+    // Phase 0: Add timeout (100ms) to prevent deadlock
+    if (xSemaphoreTake(s_spi_bus_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take SPI bus mutex (timeout after 100ms)");
     }
 }
 
@@ -49,6 +50,8 @@ void sx_spi_bus_unlock(void) {
         ESP_LOGE(TAG, "Failed to give SPI bus mutex");
     }
 }
+
+
 
 
 

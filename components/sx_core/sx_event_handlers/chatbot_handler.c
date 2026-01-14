@@ -40,9 +40,9 @@ static const char *map_emotion_to_id(const char *emotion) {
     return "neutral";
 }
 
-bool sx_event_handler_chatbot_stt(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_chatbot_stt(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_CHATBOT_STT) {
-        return false;
+        return 0;
     }
     
     const char *text = (const char *)evt->ptr;
@@ -59,14 +59,15 @@ bool sx_event_handler_chatbot_stt(const sx_event_t *evt, sx_state_t *state) {
         state->ui.last_assistant_message[0] = '\0';
         // Free text copy (may be from pool or malloc)
         sx_event_free_string((char *)evt->ptr);
-        return true;
+        // Phase 3: Return dirty_mask instead of bool
+        return SX_STATE_DIRTY_UI; // UI domain changed
     }
-    return false;
+    return 0;
 }
 
-bool sx_event_handler_chatbot_tts_sentence(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_chatbot_tts_sentence(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_CHATBOT_TTS_SENTENCE) {
-        return false;
+        return 0;
     }
     
     const char *text = (const char *)evt->ptr;
@@ -83,14 +84,15 @@ bool sx_event_handler_chatbot_tts_sentence(const sx_event_t *evt, sx_state_t *st
         state->ui.last_user_message[0] = '\0';
         // Free text copy (may be from pool or malloc)
         sx_event_free_string((char *)evt->ptr);
-        return true;
+        // Phase 3: Return dirty_mask instead of bool
+        return SX_STATE_DIRTY_UI; // UI domain changed
     }
-    return false;
+    return 0;
 }
 
-bool sx_event_handler_chatbot_emotion(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_chatbot_emotion(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_CHATBOT_EMOTION) {
-        return false;
+        return 0;
     }
     
     const char *emotion = (const char *)evt->ptr;
@@ -101,36 +103,39 @@ bool sx_event_handler_chatbot_emotion(const sx_event_t *evt, sx_state_t *state) 
         state->ui.emotion_id = map_emotion_to_id(emotion);
         // Free emotion copy (may be from pool or malloc)
         sx_event_free_string((char *)evt->ptr);
-        return true;
+        // Phase 3: Return dirty_mask instead of bool
+        return SX_STATE_DIRTY_UI; // UI domain changed
     }
-    return false;
+    return 0;
 }
 
-bool sx_event_handler_chatbot_tts_start(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_chatbot_tts_start(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_CHATBOT_TTS_START) {
-        return false;
+        return 0;
     }
     
     ESP_LOGI(TAG, "Chatbot TTS started");
     // Update state - UI can show speaking indicator
     state->seq++;
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI; // UI domain changed
 }
 
-bool sx_event_handler_chatbot_tts_stop(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_chatbot_tts_stop(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_CHATBOT_TTS_STOP) {
-        return false;
+        return 0;
     }
     
     ESP_LOGI(TAG, "Chatbot TTS stopped");
     // Update state - UI can hide speaking indicator
     state->seq++;
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI; // UI domain changed
 }
 
-bool sx_event_handler_chatbot_audio_channel_opened(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_chatbot_audio_channel_opened(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_CHATBOT_AUDIO_CHANNEL_OPENED) {
-        return false;
+        return 0;
     }
     
     // Handle audio channel opened (MQTT UDP or WebSocket)
@@ -149,12 +154,13 @@ bool sx_event_handler_chatbot_audio_channel_opened(const sx_event_t *evt, sx_sta
     }
     
     sx_audio_protocol_bridge_enable_receive(true);
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI | SX_STATE_DIRTY_AUDIO; // Both UI and audio domains changed
 }
 
-bool sx_event_handler_chatbot_connected(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_chatbot_connected(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_CHATBOT_CONNECTED) {
-        return false;
+        return 0;
     }
     
     ESP_LOGI(TAG, "Chatbot connected");
@@ -175,12 +181,13 @@ bool sx_event_handler_chatbot_connected(const sx_event_t *evt, sx_state_t *state
         // Note: For MQTT, audio receiving is enabled when UDP channel opens
         // (handled by SX_EVT_CHATBOT_AUDIO_CHANNEL_OPENED event)
     }
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI; // UI domain changed
 }
 
-bool sx_event_handler_chatbot_disconnected(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_chatbot_disconnected(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_CHATBOT_DISCONNECTED) {
-        return false;
+        return 0;
     }
     
     ESP_LOGI(TAG, "Chatbot disconnected");
@@ -203,12 +210,13 @@ bool sx_event_handler_chatbot_disconnected(const sx_event_t *evt, sx_state_t *st
         sx_audio_protocol_bridge_enable_send(false);
         ESP_LOGI(TAG, "Audio streaming disabled (all protocols disconnected)");
     }
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI | SX_STATE_DIRTY_AUDIO; // Both UI and audio domains changed
 }
 
-bool sx_event_handler_chatbot_audio_channel_closed(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_chatbot_audio_channel_closed(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_CHATBOT_AUDIO_CHANNEL_CLOSED) {
-        return false;
+        return 0;
     }
     
     ESP_LOGI(TAG, "Audio channel closed");
@@ -229,12 +237,13 @@ bool sx_event_handler_chatbot_audio_channel_closed(const sx_event_t *evt, sx_sta
     // Note: Power management will be handled in orchestrator if needed
     // (sx_platform_set_power_save_mode(true))
     
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI | SX_STATE_DIRTY_AUDIO; // Both UI and audio domains changed
 }
 
-bool sx_event_handler_system_reboot(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_system_reboot(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_SYSTEM_REBOOT) {
-        return false;
+        return 0;
     }
     
     ESP_LOGI(TAG, "System reboot requested");
@@ -249,12 +258,13 @@ bool sx_event_handler_system_reboot(const sx_event_t *evt, sx_state_t *state) {
     // Restart system
     esp_restart();
     
-    return true; // Will not reach here, but for consistency
+    // Phase 3: Return dirty_mask instead of bool (will not reach here, but for consistency)
+    return SX_STATE_DIRTY_SYSTEM | SX_STATE_DIRTY_UI; // System and UI domains changed
 }
 
-bool sx_event_handler_system_command(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_system_command(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_SYSTEM_COMMAND) {
-        return false;
+        return 0;
     }
     
     const char *command = (const char *)evt->ptr;
@@ -270,9 +280,10 @@ bool sx_event_handler_system_command(const sx_event_t *evt, sx_state_t *state) {
         // Note: Future system commands can be handled here
         // For now, only reboot is implemented
         
-        return true;
+        // Phase 3: Return dirty_mask instead of bool
+        return SX_STATE_DIRTY_SYSTEM | SX_STATE_DIRTY_UI; // System and UI domains changed
     }
-    return false;
+    return 0;
 }
 
 // Alert data structure (must match what's allocated in chatbot service)
@@ -282,9 +293,9 @@ typedef struct {
     char emotion[32];
 } alert_data_t;
 
-bool sx_event_handler_alert(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_alert(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_ALERT) {
-        return false;
+        return 0;
     }
     
     alert_data_t *alert = (alert_data_t *)evt->ptr;
@@ -307,14 +318,15 @@ bool sx_event_handler_alert(const sx_event_t *evt, sx_state_t *state) {
         // Free alert data
         free(alert);
         
-        return true;
+        // Phase 3: Return dirty_mask instead of bool
+        return SX_STATE_DIRTY_UI; // UI domain changed
     }
-    return false;
+    return 0;
 }
 
-bool sx_event_handler_protocol_error(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_protocol_error(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_PROTOCOL_ERROR) {
-        return false;
+        return 0;
     }
     
     const char *error_msg = (const char *)evt->ptr;
@@ -330,14 +342,15 @@ bool sx_event_handler_protocol_error(const sx_event_t *evt, sx_state_t *state) {
         // Free error message string
         sx_event_free_string((char *)evt->ptr);
         
-        return true;
+        // Phase 3: Return dirty_mask instead of bool
+        return SX_STATE_DIRTY_UI | SX_STATE_DIRTY_SYSTEM; // UI and system domains changed
     }
-    return false;
+    return 0;
 }
 
-bool sx_event_handler_protocol_timeout(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_protocol_timeout(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_PROTOCOL_TIMEOUT) {
-        return false;
+        return 0;
     }
     
     ESP_LOGW(TAG, "Protocol timeout");
@@ -348,7 +361,8 @@ bool sx_event_handler_protocol_timeout(const sx_event_t *evt, sx_state_t *state)
     state->ui.error_message[sizeof(state->ui.error_message) - 1] = '\0';
     state->ui.device_state = SX_DEV_ERROR;
     
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI | SX_STATE_DIRTY_SYSTEM; // UI and system domains changed
 }
 
 // Hello data structure (must match what's allocated in protocol layer)
@@ -358,9 +372,9 @@ typedef struct {
     char session_id[64];
 } hello_data_t;
 
-bool sx_event_handler_protocol_hello_received(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_protocol_hello_received(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_PROTOCOL_HELLO_RECEIVED) {
-        return false;
+        return 0;
     }
     
     hello_data_t *hello = (hello_data_t *)evt->ptr;
@@ -383,24 +397,25 @@ bool sx_event_handler_protocol_hello_received(const sx_event_t *evt, sx_state_t 
         // Free hello data
         free(hello);
         
-        return true;
+        // Phase 3: Return dirty_mask instead of bool
+        return SX_STATE_DIRTY_UI | SX_STATE_DIRTY_AUDIO; // UI and audio domains changed
     }
-    return false;
+    return 0;
 }
 
-bool sx_event_handler_protocol_hello_sent(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_protocol_hello_sent(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_PROTOCOL_HELLO_SENT) {
-        return false;
+        return 0;
     }
     
     ESP_LOGI(TAG, "Hello message sent to server");
     // No state update needed, just log
-    return false; // No state change
+    return 0; // No state change
 }
 
-bool sx_event_handler_protocol_hello_timeout(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_protocol_hello_timeout(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_PROTOCOL_HELLO_TIMEOUT) {
-        return false;
+        return 0;
     }
     
     ESP_LOGW(TAG, "Server hello timeout");
@@ -411,12 +426,13 @@ bool sx_event_handler_protocol_hello_timeout(const sx_event_t *evt, sx_state_t *
     state->ui.error_message[sizeof(state->ui.error_message) - 1] = '\0';
     state->ui.device_state = SX_DEV_ERROR;
     
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI | SX_STATE_DIRTY_SYSTEM; // UI and system domains changed
 }
 
-bool sx_event_handler_protocol_reconnecting(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_protocol_reconnecting(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_PROTOCOL_RECONNECTING) {
-        return false;
+        return 0;
     }
     
     uint32_t attempt = evt->arg0;
@@ -426,6 +442,7 @@ bool sx_event_handler_protocol_reconnecting(const sx_event_t *evt, sx_state_t *s
     state->ui.status_text = "reconnecting";
     state->ui.device_state = SX_DEV_BUSY;
     
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI | SX_STATE_DIRTY_SYSTEM; // UI and system domains changed
 }
 

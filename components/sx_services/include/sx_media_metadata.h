@@ -49,3 +49,5 @@ esp_err_t sx_meta_find_cover(const char *track_path, char *cover_path, size_t co
 
 
 
+
+

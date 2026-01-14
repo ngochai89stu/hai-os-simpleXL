@@ -14,9 +14,12 @@ sx_lvgl_lock_guard_t sx_lvgl_lock_acquire(void) {
         return guard;
     }
     
-    guard.locked = lvgl_port_lock(0);
+    // Phase 0: Add timeout (100ms) to prevent deadlock
+    guard.locked = lvgl_port_lock(100);
     if (guard.locked) {
         s_lock_acquired = true;
+    } else {
+        ESP_LOGW(TAG, "Failed to acquire LVGL lock (timeout after 100ms)");
     }
     
     return guard;
@@ -31,6 +34,8 @@ void sx_lvgl_lock_release(sx_lvgl_lock_guard_t *guard) {
     s_lock_acquired = false;
     guard->locked = false;
 }
+
+
 
 
 

@@ -5,7 +5,10 @@
  */
 
 #include "screen_music_player_spectrum.h"
-#include "sx_audio_service.h"
+// Phase 1: Remove direct include (break circular dependency)
+// #include "sx_audio_service.h"  // Removed - use state instead
+#include "sx_dispatcher.h"
+#include "sx_state.h"
 #include "sx_lvgl.h"  // LVGL wrapper (Section 7.5 SIMPLEXL_ARCH v1.3)
 #include <esp_log.h>
 
@@ -82,11 +85,16 @@ void spectrum_draw_event_cb(lv_event_t *e) {
         }
         for(i = 0; i < BAR_CNT; i++) r[i] = r_in + min_a + 77;
 
-        // Get spectrum data from audio service
+        // Phase 1: Get spectrum data from state instead of direct call
         uint16_t bands[4] = {0, 0, 0, 0};
-        esp_err_t ret = sx_audio_get_spectrum(bands, 4);
-        if(ret != ESP_OK) {
-            // Use default values if spectrum not available
+        sx_state_t state;
+        if (sx_dispatcher_get_state(&state) == ESP_OK) {
+            bands[0] = state.audio.spectrum_bands[0];
+            bands[1] = state.audio.spectrum_bands[1];
+            bands[2] = state.audio.spectrum_bands[2];
+            bands[3] = state.audio.spectrum_bands[3];
+        } else {
+            // Use default values if state not available
             bands[0] = 10;
             bands[1] = 8;
             bands[2] = 6;
@@ -179,9 +187,15 @@ void spectrum_anim_cb(void *a, int32_t v) {
     static int32_t last_bass = -1000;
     static int32_t dir = 1;
     
-    // Get spectrum data for bass detection
+    // Phase 1: Get spectrum data from state instead of direct call
     uint16_t bands[4] = {0, 0, 0, 0};
-    sx_audio_get_spectrum(bands, 4);
+    sx_state_t state;
+    if (sx_dispatcher_get_state(&state) == ESP_OK) {
+        bands[0] = state.audio.spectrum_bands[0];
+        bands[1] = state.audio.spectrum_bands[1];
+        bands[2] = state.audio.spectrum_bands[2];
+        bands[3] = state.audio.spectrum_bands[3];
+    }
     
     if(bands[0] > 12) {  // Bass threshold
         if(s_spectrum_i - last_bass > 5) {

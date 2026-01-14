@@ -1059,3 +1059,5 @@ lv_obj_add_event_cb(s_progress_slider, progress_slider_cb, LV_EVENT_VALUE_CHANGE
 
 
 
+
+

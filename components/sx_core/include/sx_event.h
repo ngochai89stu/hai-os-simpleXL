@@ -73,7 +73,10 @@ typedef enum {
     SX_EVT_AUDIO_RECORDING_STARTED,
     SX_EVT_AUDIO_RECORDING_STOPPED,
     SX_EVT_AUDIO_ERROR,
-    // Reserved: SX_EVT_AUDIO_BASE + 7 to +255
+    // Phase 1: Event-based audio operations (break circular dependency)
+    SX_EVT_AUDIO_SPECTRUM_REQUEST,      // UI → Service: request spectrum data
+    SX_EVT_AUDIO_SPECTRUM_DATA,          // Service → UI: spectrum data (ptr: float[4] array)
+    // Reserved: SX_EVT_AUDIO_BASE + 9 to +255
 
     // ========================================
     // RADIO domain (0x0300-0x03FF)
@@ -90,7 +93,11 @@ typedef enum {
     SX_EVT_WIFI_CONNECTED = SX_EVT_WIFI_BASE + 0,
     SX_EVT_WIFI_DISCONNECTED,
     SX_EVT_WIFI_SCAN_COMPLETE,
-    // Reserved: SX_EVT_WIFI_BASE + 3 to +255
+    // Phase 1: Event-based WiFi operations (break circular dependency)
+    SX_EVT_WIFI_SCAN_REQUEST,           // UI → Service: request WiFi scan
+    SX_EVT_WIFI_CONNECT_REQUEST,        // UI → Service: request connect (ptr: ssid string, arg0: has_password, arg1: password_len)
+    SX_EVT_WIFI_STATE_UPDATE,           // Service → UI: WiFi state changed (arg0: connected flag, ptr: ssid string)
+    // Reserved: SX_EVT_WIFI_BASE + 6 to +255
 
     // ========================================
     // CHATBOT domain (0x0500-0x05FF)
@@ -99,6 +106,10 @@ typedef enum {
     SX_EVT_CHATBOT_TTS_START,        // TTS started
     SX_EVT_CHATBOT_TTS_STOP,         // TTS stopped
     SX_EVT_CHATBOT_TTS_SENTENCE,     // TTS sentence (ptr: text string)
+    // Phase 1: Event-based TTS operations (break circular dependency)
+    SX_EVT_TTS_SPEAK_REQUEST,        // UI → Service: request TTS speak (ptr: text string)
+    SX_EVT_TTS_STATE_UPDATE,          // Service → UI: TTS state changed (arg0: is_speaking flag)
+    SX_EVT_STT_STATE_UPDATE,          // Service → UI: STT state changed (arg0: is_active flag)
     SX_EVT_CHATBOT_EMOTION,          // LLM emotion (ptr: emotion string)
     SX_EVT_CHATBOT_CONNECTED,        // Chatbot connected
     SX_EVT_CHATBOT_DISCONNECTED,     // Chatbot disconnected

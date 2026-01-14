@@ -543,9 +543,7 @@ static void schedule_ws_reconnect(void) {
         .arg0 = attempt,
         .ptr = NULL,
     };
-    sx_dispatcher_post_event(&evt);
-
-    if (!s_reconnect_timer) {
+    sx_dispatcher_post_event(&evt);    if (!s_reconnect_timer) {
         esp_timer_create_args_t tmr_cfg = {
             .callback = ws_reconnect_timer_cb,
             .arg = NULL,
@@ -555,9 +553,7 @@ static void schedule_ws_reconnect(void) {
     }
     esp_timer_start_once(s_reconnect_timer, delay_us);
     xSemaphoreGive(s_reconnect_mutex);
-}
-
-// ============================================================================
+}// ============================================================================
 // Protocol Base Interface Implementation
 // ============================================================================
 
@@ -941,4 +937,3 @@ sx_protocol_base_t* sx_protocol_ws_get_base(void) {
     
     return &s_ws_base;
 }
-

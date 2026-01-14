@@ -67,3 +67,5 @@ Touch initialization đã hoàn toàn thành công và touch input đang hoạt 
 
 
 
+
+

@@ -63,3 +63,5 @@ Script sẽ tự động tìm ESP-IDF ở D:\ và build.
 
 
 
+
+

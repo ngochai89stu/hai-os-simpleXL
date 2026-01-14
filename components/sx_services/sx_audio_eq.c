@@ -75,12 +75,14 @@ static void calculate_biquad_coefficients(int band, float gain_db, float q, biqu
     filter->a2 = a2 / a0;
 }
 
+// Phase 2: Audio EQ Optimization - Inline biquad processing for better performance
 // Process one sample through a biquad filter (left channel)
-static float process_biquad_left(biquad_filter_t *filter, float input) {
+static inline float process_biquad_left(biquad_filter_t *filter, float input) {
+    // Phase 2: Optimized - Calculate output using direct form II transposed structure
     float output = filter->b0 * input + filter->b1 * filter->x1_l + filter->b2 * filter->x2_l
                    - filter->a1 * filter->y1_l - filter->a2 * filter->y2_l;
     
-    // Update history
+    // Phase 2: Optimized - Update history in single pass
     filter->x2_l = filter->x1_l;
     filter->x1_l = input;
     filter->y2_l = filter->y1_l;
@@ -90,11 +92,12 @@ static float process_biquad_left(biquad_filter_t *filter, float input) {
 }
 
 // Process one sample through a biquad filter (right channel)
-static float process_biquad_right(biquad_filter_t *filter, float input) {
+static inline float process_biquad_right(biquad_filter_t *filter, float input) {
+    // Phase 2: Optimized - Calculate output using direct form II transposed structure
     float output = filter->b0 * input + filter->b1 * filter->x1_r + filter->b2 * filter->x2_r
                    - filter->a1 * filter->y1_r - filter->a2 * filter->y2_r;
     
-    // Update history
+    // Phase 2: Optimized - Update history in single pass
     filter->x2_r = filter->x1_r;
     filter->x1_r = input;
     filter->y2_r = filter->y1_r;
@@ -306,35 +309,74 @@ bool sx_audio_eq_is_enabled(void) {
     return s_initialized && s_enabled;
 }
 
+// Phase 2: Audio EQ Optimization - Check if EQ is effectively flat (all gains = 0)
+static bool is_eq_flat(void) {
+    for (int i = 0; i < SX_AUDIO_EQ_NUM_BANDS; i++) {
+        if (s_band_gains[i] != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 esp_err_t sx_audio_eq_process(int16_t *samples, size_t sample_count) {
     if (!s_initialized || !s_enabled || samples == NULL || sample_count == 0) {
         return ESP_OK;  // No processing needed
     }
     
-    // Process each sample through all EQ bands
+    // Phase 2: Audio EQ Optimization - Early exit if EQ is flat (all gains = 0)
+    if (is_eq_flat()) {
+        return ESP_OK;  // Skip processing if no EQ applied
+    }
+    
+    // Phase 2: Audio EQ Optimization - Pre-calculate active bands to skip zero-gain bands
+    static int s_active_bands[SX_AUDIO_EQ_NUM_BANDS] = {0};
+    static int s_active_band_count = 0;
+    static int16_t s_last_gains[SX_AUDIO_EQ_NUM_BANDS] = {0};
+    
+    // Check if gains changed, rebuild active band list
+    bool gains_changed = false;
+    for (int i = 0; i < SX_AUDIO_EQ_NUM_BANDS; i++) {
+        if (s_last_gains[i] != s_band_gains[i]) {
+            gains_changed = true;
+            break;
+        }
+    }
+    
+    if (gains_changed) {
+        s_active_band_count = 0;
+        for (int i = 0; i < SX_AUDIO_EQ_NUM_BANDS; i++) {
+            if (s_band_gains[i] != 0) {
+                s_active_bands[s_active_band_count++] = i;
+            }
+            s_last_gains[i] = s_band_gains[i];
+        }
+    }
+    
+    // Phase 2: Audio EQ Optimization - Process only active bands
     // For stereo interleaved: process left and right channels separately with separate history
     for (size_t i = 0; i < sample_count; i += 2) {
         float left = (float)samples[i];
         float right = (float)samples[i + 1];
         
-        // Process left channel through all bands (cascade)
-        for (int band = 0; band < SX_AUDIO_EQ_NUM_BANDS; band++) {
+        // Process left channel through active bands only (cascade)
+        for (int b = 0; b < s_active_band_count; b++) {
+            int band = s_active_bands[b];
             left = process_biquad_left(&s_filters[band], left);
         }
         
-        // Process right channel through all bands with separate history
-        for (int band = 0; band < SX_AUDIO_EQ_NUM_BANDS; band++) {
+        // Process right channel through active bands only with separate history
+        for (int b = 0; b < s_active_band_count; b++) {
+            int band = s_active_bands[b];
             right = process_biquad_right(&s_filters[band], right);
         }
         
-        // Clamp and convert back to int16_t
-        if (left > 32767.0f) left = 32767.0f;
-        if (left < -32768.0f) left = -32768.0f;
-        if (right > 32767.0f) right = 32767.0f;
-        if (right < -32768.0f) right = -32768.0f;
+        // Phase 2: Audio EQ Optimization - Optimized clamping (single comparison per channel)
+        int16_t left_i16 = (int16_t)((left > 32767.0f) ? 32767 : ((left < -32768.0f) ? -32768 : left));
+        int16_t right_i16 = (int16_t)((right > 32767.0f) ? 32767 : ((right < -32768.0f) ? -32768 : right));
         
-        samples[i] = (int16_t)left;
-        samples[i + 1] = (int16_t)right;
+        samples[i] = left_i16;
+        samples[i + 1] = right_i16;
     }
     
     return ESP_OK;

@@ -30,3 +30,5 @@ esp_err_t sx_jpeg_encode_rgb565(const uint8_t *rgb565_data, uint16_t width, uint
 
 
 
+
+

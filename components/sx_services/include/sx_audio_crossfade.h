@@ -59,6 +59,9 @@ bool sx_audio_crossfade_is_enabled(void);
 // Set sample rate (called when audio sample rate changes)
 void sx_audio_crossfade_set_sample_rate(uint32_t sample_rate);
 
+// Deinitialize crossfade engine and free resources
+esp_err_t sx_audio_crossfade_deinit(void);
+
 #ifdef __cplusplus
 }
 #endif

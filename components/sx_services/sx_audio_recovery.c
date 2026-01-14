@@ -1,5 +1,6 @@
 #include "sx_audio_recovery.h"
 #include "sx_audio_service.h"
+#include "sx_metrics.h"  // Phase 3: KPI metrics (audio underrun/recovery)
 
 #include <esp_log.h>
 #include <string.h>
@@ -65,6 +66,10 @@ static void sx_audio_recovery_task(void *arg) {
     
     s_recovery_active = false;
     s_stats.successful_recoveries++;
+    
+    // Phase 3: KPI metrics
+    sx_metrics_inc_audio_recovery();
+    
     ESP_LOGI(TAG, "Audio recovery completed");
     
     vTaskDelete(NULL);
@@ -106,6 +111,9 @@ bool sx_audio_recovery_check(uint32_t current_buffer_ms) {
         ESP_LOGW(TAG, "Buffer underrun detected: %lu ms (threshold: %lu ms)",
                  (unsigned long)current_buffer_ms,
                  (unsigned long)s_config.buffer_underrun_threshold_ms);
+        
+        // Phase 3: KPI metrics
+        sx_metrics_inc_audio_underrun();
         
         return sx_audio_recovery_trigger();
     }

@@ -925,3 +925,5 @@ UI ← Event Dispatcher ← Protocol ← Server (STT/TTS/LLM/MCP JSON)
 
 
 
+
+

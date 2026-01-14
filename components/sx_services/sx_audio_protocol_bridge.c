@@ -518,9 +518,7 @@ esp_err_t sx_audio_protocol_bridge_update_frame_duration(uint32_t frame_duration
     }
     
     return ESP_OK;
-}
-
-// Get error statistics
+}// Get error statistics
 sx_audio_bridge_stats_t sx_audio_protocol_bridge_get_stats(void) {
     sx_audio_bridge_stats_t stats = {
         .send_errors = s_send_error_count,
@@ -528,13 +526,10 @@ sx_audio_bridge_stats_t sx_audio_protocol_bridge_get_stats(void) {
         .decode_errors = s_decode_error_count,
     };
     return stats;
-}
-
-// Reset error statistics
+}// Reset error statistics
 void sx_audio_protocol_bridge_reset_stats(void) {
     s_send_error_count = 0;
     s_receive_drop_count = 0;
     s_decode_error_count = 0;
     ESP_LOGI(TAG, "Error statistics reset");
 }
-

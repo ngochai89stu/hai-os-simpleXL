@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <esp_err.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,121 +11,76 @@ extern "C" {
 /**
  * @file sx_metrics.h
  * @brief Metrics collection system (Section 9.1 SIMPLEXL_ARCH v1.3)
- * P2.6: Complete metrics system
+ * Phase-3 KPI extension
  */
 
 // P2.6: Metrics types
 typedef struct {
     // Event metrics (Section 9.2)
     uint32_t evt_posted_total[4];      // Per priority: LOW, NORMAL, HIGH, CRITICAL
-    uint32_t evt_dropped_total[4];      // Per priority
+    uint32_t evt_dropped_total[4];     // Per priority
     uint32_t evt_coalesced_total[4];   // Per priority
     uint32_t evt_processed_total;      // Total processed by orchestrator
-    
+
     // Queue depth gauges (Section 9.2)
     uint32_t queue_depth[4];           // Per priority: LOW, NORMAL, HIGH, CRITICAL
-    
+
     // State metrics (Section 9.2)
-    uint32_t state_version;             // Current state version
-    uint32_t state_updates_total;       // Total state updates
-    
+    uint32_t state_version;            // Current state version
+    uint32_t state_updates_total;      // Total state updates
+
     // UI metrics (Section 9.2)
-    uint32_t ui_render_ms_last;         // Last render time in ms
-    uint32_t ui_render_ms_avg;          // Average render time in ms
-    uint32_t ui_render_ms_max;          // Max render time in ms
-    uint32_t ui_frames_total;           // Total frames rendered
-    
+    uint32_t ui_render_ms_last;        // Last render time in ms
+    uint32_t ui_render_ms_avg;         // Average render time in ms
+    uint32_t ui_render_ms_max;         // Max render time in ms
+    uint32_t ui_frames_total;          // Total frames rendered
+
+    // Audio metrics (Phase-3)
+    uint32_t audio_underrun_total;     // Total buffer underruns detected
+    uint32_t audio_recovery_total;     // Total recovery attempts executed
+
+    // Wi-Fi metrics (Phase-3)
+    uint32_t wifi_reconnect_ms_last;   // Last reconnect time (ms)
+    uint32_t wifi_reconnect_ms_max;    // Max reconnect time (ms)
+
     // Memory metrics (Section 9.2)
-    uint32_t heap_free_min;             // Minimum free heap (in bytes)
-    uint32_t heap_free_current;         // Current free heap (in bytes)
-    uint32_t psram_free_min;            // Minimum free PSRAM (in bytes, 0 if not available)
-    uint32_t psram_free_current;        // Current free PSRAM (in bytes, 0 if not available)
+    uint32_t heap_free_min;            // Minimum free heap (bytes)
+    uint32_t heap_free_current;        // Current free heap (bytes)
+    uint32_t psram_free_min;           // Minimum free PSRAM (bytes)
+    uint32_t psram_free_current;       // Current free PSRAM (bytes)
 } sx_metrics_t;
 
-/**
- * @brief Initialize metrics system
- * @return true on success
- */
-bool sx_metrics_init(void);
+bool  sx_metrics_init(void);
+void  sx_metrics_get(sx_metrics_t *out_metrics);
+void  sx_metrics_reset(void);
 
-/**
- * @brief Get current metrics snapshot
- * @param out_metrics Output metrics structure
- */
-void sx_metrics_get(sx_metrics_t *out_metrics);
+// Event helper APIs
+void  sx_metrics_inc_evt_posted(uint32_t priority);
+void  sx_metrics_inc_evt_dropped(uint32_t priority);
+void  sx_metrics_inc_evt_coalesced(uint32_t priority);
+void  sx_metrics_set_queue_depth(uint32_t priority, uint32_t depth);
 
-/**
- * @brief Reset all metrics counters
- */
-void sx_metrics_reset(void);
+// State helpers
+void  sx_metrics_set_state_version(uint32_t version);
+void  sx_metrics_inc_state_updates(void);
 
-/**
- * @brief Increment event posted counter for priority
- * @param priority Event priority (0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL)
- */
-void sx_metrics_inc_evt_posted(uint32_t priority);
+// UI helpers
+void  sx_metrics_update_ui_render(uint32_t render_ms);
 
-/**
- * @brief Increment event dropped counter for priority
- * @param priority Event priority
- */
-void sx_metrics_inc_evt_dropped(uint32_t priority);
+// Heap / PSRAM helpers
+void  sx_metrics_update_heap(uint32_t free_current, uint32_t free_min);
+void  sx_metrics_update_psram(uint32_t free_current, uint32_t free_min);
 
-/**
- * @brief Increment event coalesced counter for priority
- * @param priority Event priority
- */
-void sx_metrics_inc_evt_coalesced(uint32_t priority);
+// Phase-3: Audio helpers
+void  sx_metrics_inc_audio_underrun(void);
+void  sx_metrics_inc_audio_recovery(void);
 
-/**
- * @brief Update queue depth gauge for priority
- * @param priority Event priority
- * @param depth Current queue depth
- */
-void sx_metrics_set_queue_depth(uint32_t priority, uint32_t depth);
+// Phase-3: Wi-Fi helpers
+void  sx_metrics_update_wifi_reconnect(uint32_t reconnect_ms);
 
-/**
- * @brief Update state version gauge
- * @param version Current state version
- */
-void sx_metrics_set_state_version(uint32_t version);
-
-/**
- * @brief Increment state updates counter
- */
-void sx_metrics_inc_state_updates(void);
-
-/**
- * @brief Update UI render time
- * @param render_ms Render time in milliseconds
- */
-void sx_metrics_update_ui_render(uint32_t render_ms);
-
-/**
- * @brief Update heap metrics
- * @param free_current Current free heap in bytes
- * @param free_min Minimum free heap in bytes
- */
-void sx_metrics_update_heap(uint32_t free_current, uint32_t free_min);
-
-/**
- * @brief Update PSRAM metrics
- * @param free_current Current free PSRAM in bytes
- * @param free_min Minimum free PSRAM in bytes
- */
-void sx_metrics_update_psram(uint32_t free_current, uint32_t free_min);
-
-/**
- * @brief Dump metrics to log (for debugging)
- */
-void sx_metrics_dump(void);
+// Export helpers
+esp_err_t sx_metrics_export_prom(const char *file_path);
 
 #ifdef __cplusplus
 }
 #endif
-
-
-
-
-
-

@@ -9,8 +9,8 @@
 
 static const char *TAG = "sx_intent";
 
-// Intent handlers
-#define MAX_INTENT_HANDLERS 16
+// Phase 2: Intent Engine v2 - Increased handler capacity
+#define MAX_INTENT_HANDLERS 32  // Increased from 16 to support more intent types
 static sx_intent_handler_t s_handlers[MAX_INTENT_HANDLERS] = {0};
 static bool s_initialized = false;
 
@@ -63,7 +63,7 @@ esp_err_t sx_intent_service_init(void) {
 }
 
 esp_err_t sx_intent_register_handler(sx_intent_type_t type, sx_intent_handler_t handler) {
-    if (!s_initialized || type >= MAX_INTENT_HANDLERS || handler == NULL) {
+    if (!s_initialized || type >= SX_INTENT_MAX || type >= MAX_INTENT_HANDLERS || handler == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -110,6 +110,25 @@ esp_err_t sx_intent_parse(const char *text, sx_intent_t *intent) {
         return ESP_OK;
     }
     
+    // Phase 2: Intent Engine v2 - Music navigation intents
+    if (contains_keyword(lower_text, "next track") || contains_keyword(lower_text, "bài tiếp") || 
+        contains_keyword(lower_text, "bài sau") || contains_keyword(lower_text, "tiếp theo")) {
+        intent->type = SX_INTENT_MUSIC_NEXT;
+        return ESP_OK;
+    }
+    
+    if (contains_keyword(lower_text, "previous track") || contains_keyword(lower_text, "bài trước") ||
+        contains_keyword(lower_text, "bài trước đó") || contains_keyword(lower_text, "lùi lại")) {
+        intent->type = SX_INTENT_MUSIC_PREVIOUS;
+        return ESP_OK;
+    }
+    
+    if (contains_keyword(lower_text, "resume music") || contains_keyword(lower_text, "tiếp tục phát") ||
+        contains_keyword(lower_text, "phát tiếp")) {
+        intent->type = SX_INTENT_MUSIC_RESUME;
+        return ESP_OK;
+    }
+    
     // Radio intents
     if (contains_keyword(lower_text, "play radio") || contains_keyword(lower_text, "phát radio")) {
         intent->type = SX_INTENT_RADIO_PLAY;
@@ -136,6 +155,19 @@ esp_err_t sx_intent_parse(const char *text, sx_intent_t *intent) {
         return ESP_OK;
     }
     
+    // Phase 2: Intent Engine v2 - Volume mute/unmute intents
+    if (contains_keyword(lower_text, "mute") || contains_keyword(lower_text, "tắt tiếng") ||
+        contains_keyword(lower_text, "im lặng")) {
+        intent->type = SX_INTENT_VOLUME_MUTE;
+        return ESP_OK;
+    }
+    
+    if (contains_keyword(lower_text, "unmute") || contains_keyword(lower_text, "bật tiếng") ||
+        contains_keyword(lower_text, "mở tiếng")) {
+        intent->type = SX_INTENT_VOLUME_UNMUTE;
+        return ESP_OK;
+    }
+    
     if (contains_keyword(lower_text, "volume") || contains_keyword(lower_text, "âm lượng")) {
         // Try to extract volume level
         const char *vol_str = strstr(lower_text, "volume");
@@ -143,8 +175,13 @@ esp_err_t sx_intent_parse(const char *text, sx_intent_t *intent) {
             vol_str = strstr(lower_text, "âm lượng");
         }
         if (vol_str != NULL) {
-            // Look for number after "volume"
-            const char *num_start = vol_str + (vol_str == lower_text ? 6 : 8);
+            // Look for number after "volume" or "âm lượng"
+            const char *num_start = vol_str;
+            if (strstr(vol_str, "volume") == vol_str) {
+                num_start = vol_str + 6;  // "volume"
+            } else {
+                num_start = vol_str + 8;  // "âm lượng"
+            }
             while (*num_start == ' ' || *num_start == '\t') {
                 num_start++;
             }
@@ -153,6 +190,44 @@ esp_err_t sx_intent_parse(const char *text, sx_intent_t *intent) {
                 intent->value = atoi(num_start);
                 if (intent->value > 100) intent->value = 100;
                 if (intent->value < 0) intent->value = 0;
+                return ESP_OK;
+            }
+        }
+    }
+    
+    // Phase 2: Intent Engine v2 - Seek position intent
+    if (contains_keyword(lower_text, "seek") || contains_keyword(lower_text, "nhảy đến") ||
+        contains_keyword(lower_text, "chuyển đến")) {
+        // Try to extract position (seconds or percentage)
+        const char *seek_str = strstr(lower_text, "seek");
+        if (seek_str == NULL) {
+            seek_str = strstr(lower_text, "nhảy đến");
+            if (seek_str == NULL) {
+                seek_str = strstr(lower_text, "chuyển đến");
+            }
+        }
+        if (seek_str != NULL) {
+            const char *num_start = seek_str;
+            if (strstr(seek_str, "seek") == seek_str) {
+                num_start = seek_str + 4;  // "seek"
+            } else if (strstr(seek_str, "nhảy đến") == seek_str) {
+                num_start = seek_str + 8;  // "nhảy đến"
+            } else {
+                num_start = seek_str + 9;  // "chuyển đến"
+            }
+            while (*num_start == ' ' || *num_start == '\t') {
+                num_start++;
+            }
+            if (*num_start >= '0' && *num_start <= '9') {
+                intent->type = SX_INTENT_SEEK_POSITION;
+                intent->value = atoi(num_start);
+                // Check if percentage (ends with "%" or "phần trăm")
+                const char *pct_check = num_start;
+                while (*pct_check >= '0' && *pct_check <= '9') pct_check++;
+                if (*pct_check == '%' || strstr(pct_check, "phần trăm") != NULL) {
+                    // Percentage mode (value is 0-100)
+                    intent->value = (intent->value > 100) ? 100 : intent->value;
+                }
                 return ESP_OK;
             }
         }
@@ -216,6 +291,18 @@ esp_err_t sx_intent_execute(const char *text) {
             sx_radio_pause();
             sx_audio_pause();
             return ESP_OK;
+        
+        // Phase 2: Intent Engine v2 - Music navigation handlers
+        case SX_INTENT_MUSIC_RESUME:
+            sx_radio_resume();
+            sx_audio_resume();
+            return ESP_OK;
+            
+        case SX_INTENT_MUSIC_NEXT:
+            return sx_playlist_next();
+            
+        case SX_INTENT_MUSIC_PREVIOUS:
+            return sx_playlist_previous();
             
         case SX_INTENT_VOLUME_UP: {
             uint8_t vol = sx_audio_get_volume();
@@ -242,6 +329,26 @@ esp_err_t sx_intent_execute(const char *text) {
         
         case SX_INTENT_VOLUME_SET:
             return sx_audio_set_volume(intent.value);
+        
+        // Phase 2: Intent Engine v2 - Volume mute/unmute handlers
+        // Note: Using volume 0/restore approach since sx_audio_set_mute() may not exist
+        case SX_INTENT_VOLUME_MUTE: {
+            // Store current volume and set to 0
+            static uint8_t s_saved_volume = 50;  // Default if not saved
+            s_saved_volume = sx_audio_get_volume();
+            return sx_audio_set_volume(0);
+        }
+        
+        case SX_INTENT_VOLUME_UNMUTE: {
+            // Restore saved volume (or use default 50)
+            static uint8_t s_saved_volume = 50;
+            return sx_audio_set_volume(s_saved_volume);
+        }
+        
+        // Phase 2: Intent Engine v2 - Seek position handler
+        case SX_INTENT_SEEK_POSITION:
+            // Note: sx_audio_seek() may return ESP_ERR_NOT_SUPPORTED if not implemented
+            return sx_audio_seek(intent.value);
             
         case SX_INTENT_WIFI_CONNECT:
             if (intent.entity[0] != '\0') {

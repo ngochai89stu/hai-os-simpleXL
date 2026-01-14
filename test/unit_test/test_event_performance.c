@@ -231,19 +231,23 @@ void test_metrics_accuracy(void) {
     TEST_ASSERT_GREATER_OR_EQUAL_UINT32(num_events, metrics.evt_posted_total[1]);
 }
 
-void app_main(void) {
-    UNITY_BEGIN();
-    
-    RUN_TEST(test_event_posting_rate);
-    RUN_TEST(test_backpressure_drop_under_load);
-    RUN_TEST(test_backpressure_coalesce);
-    RUN_TEST(test_queue_depth_under_stress);
-    RUN_TEST(test_state_update_rate);
-    RUN_TEST(test_priority_ordering_under_load);
-    RUN_TEST(test_metrics_accuracy);
-    
-    UNITY_END();
-}
+// Note: app_main for this file is intentionally disabled.
+// This file is linked into the unit_test app where main/test_runner.c is the single entry point.
+// Keeping a second app_main breaks the link.
+//
+// void app_main(void) {
+//     UNITY_BEGIN();
+//     RUN_TEST(test_event_posting_rate);
+//     RUN_TEST(test_backpressure_drop_under_load);
+//     RUN_TEST(test_backpressure_coalesce);
+//     RUN_TEST(test_queue_depth_under_stress);
+//     RUN_TEST(test_state_update_rate);
+//     RUN_TEST(test_priority_ordering_under_load);
+//     RUN_TEST(test_metrics_accuracy);
+//     UNITY_END();
+// }
+
+
 
 
 

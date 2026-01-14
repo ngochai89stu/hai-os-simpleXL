@@ -10,8 +10,11 @@
 #include "sx_dispatcher.h"
 #include "sx_state.h"
 #include "sx_event.h"
-#include "sx_stt_service.h"
-#include "sx_tts_service.h"
+// Phase 1: Remove direct includes (break circular dependency)
+// #include "sx_stt_service.h"  // Removed - use state instead
+// #include "sx_tts_service.h"  // Removed - use state instead
+#include "sx_dispatcher.h"
+#include "sx_state.h"
 #include "ui_theme_tokens.h"
 #include "ui_list.h"
 
@@ -267,19 +270,58 @@ static void on_update(const sx_state_t *state) {
         return;
     }
     
-    // Check if state has changed
+    // Phase 2: Optimized - Check if state has changed
     if (state->seq == s_last_state_seq) {
         return;  // No change
     }
     s_last_state_seq = state->seq;
     
+    // Phase 2: Optimized - Only update UI if relevant domains changed (dirty_mask)
+    uint32_t dirty_mask = state->dirty_mask;
+    bool ui_dirty = (dirty_mask & SX_STATE_DIRTY_UI) != 0;
+    bool audio_dirty = (dirty_mask & SX_STATE_DIRTY_AUDIO) != 0;
+    
     // Update UI based on state
     // For chat screen, we mainly listen to events for new messages
     // State updates can be used for status changes
-    if (strcmp(state->ui.status_text, "stt_result") == 0 && state->ui.last_user_message[0] != '\0') {
-        add_message_to_list_unlocked("user", state->ui.last_user_message);
-    } else if (strcmp(state->ui.status_text, "tts_sentence") == 0 && state->ui.last_assistant_message[0] != '\0') {
-        add_message_to_list_unlocked("assistant", state->ui.last_assistant_message);
+    if (ui_dirty) {
+        // Phase 2: Optimized - Cache string comparison results
+        static const char *last_status = NULL;
+        bool status_changed = (last_status != state->ui.status_text);
+        if (status_changed) {
+            last_status = state->ui.status_text;
+        }
+        
+        if (status_changed && strcmp(state->ui.status_text, "stt_result") == 0 && state->ui.last_user_message[0] != '\0') {
+            add_message_to_list_unlocked("user", state->ui.last_user_message);
+        } else if (status_changed && strcmp(state->ui.status_text, "tts_sentence") == 0 && state->ui.last_assistant_message[0] != '\0') {
+            add_message_to_list_unlocked("assistant", state->ui.last_assistant_message);
+        }
+        
+        // Phase 2: Optimized - Only update STT/TTS status if audio domain changed
+        if (audio_dirty || ui_dirty) {
+            // Update STT/TTS status labels only if state changed
+            static bool last_stt_active = false;
+            static bool last_tts_speaking = false;
+            
+            if (last_stt_active != state->ui.stt_active) {
+                last_stt_active = state->ui.stt_active;
+                if (s_stt_status_label != NULL) {
+                    lv_label_set_text(s_stt_status_label, last_stt_active ? "STT: Active" : "STT: Ready");
+                    lv_obj_set_style_text_color(s_stt_status_label, 
+                                                last_stt_active ? lv_color_hex(0x5b7fff) : lv_color_hex(0x888888), 0);
+                }
+            }
+            
+            if (last_tts_speaking != state->ui.tts_speaking) {
+                last_tts_speaking = state->ui.tts_speaking;
+                if (s_tts_status_label != NULL) {
+                    lv_label_set_text(s_tts_status_label, last_tts_speaking ? "TTS: Speaking" : "TTS: Ready");
+                    lv_obj_set_style_text_color(s_tts_status_label, 
+                                                last_tts_speaking ? lv_color_hex(0x5b7fff) : lv_color_hex(0x888888), 0);
+                }
+            }
+        }
     }
 
     // Poll chatbot events and update UI
@@ -355,30 +397,33 @@ static void on_update(const sx_state_t *state) {
         // Note: Other events are handled by orchestrator, we only handle UI-related ones here
     }
     
-    // Update STT/TTS status from services
-    // Update STT status
-    bool stt_is_active = sx_stt_is_active();
-    if (stt_is_active != s_stt_active && s_stt_status_label != NULL) {
-        s_stt_active = stt_is_active;
-        if (stt_is_active) {
-            lv_label_set_text(s_stt_status_label, "STT: Listening");
-            lv_obj_set_style_text_color(s_stt_status_label, lv_color_hex(0x5b7fff), 0);
-        } else {
-            lv_label_set_text(s_stt_status_label, "STT: Ready");
-            lv_obj_set_style_text_color(s_stt_status_label, lv_color_hex(0x888888), 0);
+    // Phase 1: Update STT/TTS status from state instead of direct calls
+    sx_state_t state;
+    if (sx_dispatcher_get_state(&state) == ESP_OK) {
+        // Update STT status
+        bool stt_is_active = state.ui.stt_active;
+        if (stt_is_active != s_stt_active && s_stt_status_label != NULL) {
+            s_stt_active = stt_is_active;
+            if (stt_is_active) {
+                lv_label_set_text(s_stt_status_label, "STT: Listening");
+                lv_obj_set_style_text_color(s_stt_status_label, lv_color_hex(0x5b7fff), 0);
+            } else {
+                lv_label_set_text(s_stt_status_label, "STT: Ready");
+                lv_obj_set_style_text_color(s_stt_status_label, lv_color_hex(0x888888), 0);
+            }
         }
-    }
-    
-    // Update TTS status
-    bool tts_is_speaking = sx_tts_is_speaking();
-    if (tts_is_speaking != s_tts_speaking && s_tts_status_label != NULL) {
-        s_tts_speaking = tts_is_speaking;
-        if (tts_is_speaking) {
-            lv_label_set_text(s_tts_status_label, "TTS: Speaking");
-            lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x5b7fff), 0);
-        } else {
-            lv_label_set_text(s_tts_status_label, "TTS: Ready");
-            lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x888888), 0);
+        
+        // Update TTS status
+        bool tts_is_speaking = state.ui.tts_speaking;
+        if (tts_is_speaking != s_tts_speaking && s_tts_status_label != NULL) {
+            s_tts_speaking = tts_is_speaking;
+            if (tts_is_speaking) {
+                lv_label_set_text(s_tts_status_label, "TTS: Speaking");
+                lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x5b7fff), 0);
+            } else {
+                lv_label_set_text(s_tts_status_label, "TTS: Ready");
+                lv_obj_set_style_text_color(s_tts_status_label, lv_color_hex(0x888888), 0);
+            }
         }
     }
 }

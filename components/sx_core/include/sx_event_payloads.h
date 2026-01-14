@@ -51,6 +51,19 @@ typedef struct {
 
 // QR code service uses existing sx_qr_code_result_t from sx_qr_code_service.h
 
+// WiFi service event payloads (Phase 1: break circular dependency)
+typedef struct {
+    sx_wifi_network_info_t *networks;  // Array of network info (owned by service, UI must copy)
+    uint8_t count;                      // Number of networks
+    uint8_t max_count;                  // Maximum number of networks in array
+} sx_wifi_scan_result_payload_t;
+
+typedef struct {
+    char ssid[33];                      // SSID to connect to
+    char password[65];                   // Password (empty if no password)
+    bool has_password;                   // Whether password is provided
+} sx_wifi_connect_request_payload_t;
+
 #ifdef __cplusplus
 }
 #endif

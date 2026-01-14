@@ -3,20 +3,24 @@
 #include "sx_dispatcher.h"
 #include "sx_event.h"
 #include "sx_media_metadata.h"
+#include "sx_sd_service.h"
 
 #include <esp_log.h>
 #include <string.h>
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"  // Phase 2: xTaskGetTickCount for LRU
 #include "freertos/semphr.h"
+#include "cJSON.h"
 
 static const char *TAG = "sx_playlist";
 
-// Phase 5: Metadata cache structure
+// Phase 5: Metadata cache structure with LRU support
 typedef struct {
     char file_path[512];
     sx_track_meta_t meta;
     bool valid;
+    uint32_t last_access_time;  // Phase 2: For LRU eviction (tick count)
 } sx_track_meta_cache_t;
 
 #define METADATA_CACHE_SIZE 32
@@ -30,15 +34,40 @@ static sx_track_meta_t* get_track_metadata(const char *file_path) {
     }
     
     // Check cache first
+    uint32_t current_time = xTaskGetTickCount();
     for (size_t i = 0; i < METADATA_CACHE_SIZE; i++) {
         if (s_metadata_cache[i].valid && strcmp(s_metadata_cache[i].file_path, file_path) == 0) {
+            // Cache hit: update access time and return
+            s_metadata_cache[i].last_access_time = current_time;
             return &s_metadata_cache[i].meta;
         }
     }
     
-    // Not in cache, parse and add to cache (LRU: use next index)
-    size_t cache_idx = s_cache_next_index % METADATA_CACHE_SIZE;
-    sx_track_meta_cache_t *cache_entry = &s_metadata_cache[cache_idx];
+    // Not in cache, find LRU entry for eviction
+    size_t lru_idx = 0;
+    uint32_t lru_time = s_metadata_cache[0].valid ? s_metadata_cache[0].last_access_time : 0;
+    bool found_invalid = false;
+    
+    // First, try to find an invalid entry
+    for (size_t i = 0; i < METADATA_CACHE_SIZE; i++) {
+        if (!s_metadata_cache[i].valid) {
+            lru_idx = i;
+            found_invalid = true;
+            break;
+        }
+    }
+    
+    // If no invalid entry, find LRU (oldest access time)
+    if (!found_invalid) {
+        for (size_t i = 1; i < METADATA_CACHE_SIZE; i++) {
+            if (s_metadata_cache[i].last_access_time < lru_time) {
+                lru_time = s_metadata_cache[i].last_access_time;
+                lru_idx = i;
+            }
+        }
+    }
+    
+    sx_track_meta_cache_t *cache_entry = &s_metadata_cache[lru_idx];
     
     // Clear old entry
     memset(cache_entry, 0, sizeof(sx_track_meta_cache_t));
@@ -52,7 +81,7 @@ static sx_track_meta_t* get_track_metadata(const char *file_path) {
         strncpy(cache_entry->file_path, file_path, sizeof(cache_entry->file_path) - 1);
         cache_entry->meta = meta;
         cache_entry->valid = true;
-        s_cache_next_index++;
+        cache_entry->last_access_time = current_time;  // Phase 2: Set access time
         return &cache_entry->meta;
     } else {
         // Parse failed, try duration estimate
@@ -62,7 +91,7 @@ static sx_track_meta_t* get_track_metadata(const char *file_path) {
             strncpy(cache_entry->file_path, file_path, sizeof(cache_entry->file_path) - 1);
             cache_entry->meta = meta;
             cache_entry->valid = true;
-            s_cache_next_index++;
+            cache_entry->last_access_time = current_time;  // Phase 2: Set access time
             return &cache_entry->meta;
         }
     }
@@ -136,8 +165,8 @@ esp_err_t sx_playlist_create(const char **track_paths, size_t track_count, sx_pl
                 free(playlist);
                 return ESP_ERR_NO_MEM;
             }
-            strncpy(playlist->track_paths[i], track_paths[i], sizeof(playlist->track_paths[i]) - 1);
-            playlist->track_paths[i][sizeof(playlist->track_paths[i]) - 1] = '\0';
+            strncpy(playlist->track_paths[i], track_paths[i], path_len - 1);
+            playlist->track_paths[i][path_len - 1] = '\0';
         } else {
             playlist->track_paths[i] = NULL;
         }
@@ -271,10 +300,23 @@ esp_err_t sx_playlist_next(void) {
     
     xSemaphoreGive(s_playlist_mutex);
     
+    // Phase 2: Gapless playback - check if this is the preloaded track
+    bool is_preloaded = (s_next_preloaded && s_preloaded_track_path != NULL && 
+                         strcmp(track_path, s_preloaded_track_path) == 0);
+    
     // Play the track
     esp_err_t ret = sx_audio_play_file(track_path);
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Playing next track: %s", track_path);
+        if (is_preloaded) {
+            ESP_LOGI(TAG, "Gapless: Playing preloaded track: %s", track_path);
+            // Clear preload state since we're now playing it
+            if (xSemaphoreTake(s_playlist_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                s_next_preloaded = false;
+                xSemaphoreGive(s_playlist_mutex);
+            }
+        } else {
+            ESP_LOGI(TAG, "Playing next track: %s", track_path);
+        }
     } else {
         ESP_LOGE(TAG, "Failed to play track: %s", esp_err_to_name(ret));
     }
@@ -467,8 +509,8 @@ esp_err_t sx_playlist_preload_next(void) {
         size_t path_len = strlen(s_current_playlist->track_paths[next_index]) + 1;
         s_preloaded_track_path = (char *)malloc(path_len);
         if (s_preloaded_track_path != NULL) {
-            strncpy(s_preloaded_track_path, s_current_playlist->track_paths[next_index], sizeof(s_preloaded_track_path) - 1);
-            s_preloaded_track_path[sizeof(s_preloaded_track_path) - 1] = '\0';
+            strncpy(s_preloaded_track_path, s_current_playlist->track_paths[next_index], path_len - 1);
+            s_preloaded_track_path[path_len - 1] = '\0';
             s_preloaded_index = next_index;
             s_next_preloaded = true;
             ESP_LOGI(TAG, "Preloaded next track: %s (index %zu)", s_preloaded_track_path, next_index);
@@ -703,5 +745,202 @@ esp_err_t sx_playlist_get_cover_path(size_t track_index, char *path, size_t path
     
     xSemaphoreGive(s_playlist_mutex);
     return ret;
+}
+
+// Phase 1: Save playlist to JSON file on SD card
+esp_err_t sx_playlist_save_to_file(const char *file_path) {
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (file_path == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    if (xSemaphoreTake(s_playlist_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    if (s_current_playlist == NULL) {
+        xSemaphoreGive(s_playlist_mutex);
+        ESP_LOGW(TAG, "No playlist to save");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Create JSON object
+    cJSON *json = cJSON_CreateObject();
+    if (json == NULL) {
+        xSemaphoreGive(s_playlist_mutex);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Create tracks array
+    cJSON *tracks_array = cJSON_CreateArray();
+    if (tracks_array == NULL) {
+        cJSON_Delete(json);
+        xSemaphoreGive(s_playlist_mutex);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    for (size_t i = 0; i < s_current_playlist->track_count; i++) {
+        if (s_current_playlist->track_paths[i] != NULL) {
+            cJSON *track_item = cJSON_CreateString(s_current_playlist->track_paths[i]);
+            if (track_item != NULL) {
+                cJSON_AddItemToArray(tracks_array, track_item);
+            }
+        }
+    }
+    
+    cJSON_AddItemToObject(json, "tracks", tracks_array);
+    cJSON_AddNumberToObject(json, "current_index", s_current_playlist->current_index);
+    cJSON_AddBoolToObject(json, "shuffle", s_current_playlist->shuffle);
+    cJSON_AddBoolToObject(json, "repeat_all", s_current_playlist->repeat_all);
+    cJSON_AddBoolToObject(json, "repeat_one", s_current_playlist->repeat_one);
+    
+    // Convert to string
+    char *json_string = cJSON_Print(json);
+    if (json_string == NULL) {
+        cJSON_Delete(json);
+        xSemaphoreGive(s_playlist_mutex);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    size_t json_len = strlen(json_string);
+    size_t written = 0;
+    esp_err_t ret = sx_sd_write_file(file_path, json_string, json_len, &written);
+    
+    free(json_string);
+    cJSON_Delete(json);
+    xSemaphoreGive(s_playlist_mutex);
+    
+    if (ret == ESP_OK && written == json_len) {
+        ESP_LOGI(TAG, "Playlist saved to %s (%zu bytes, %zu tracks)", file_path, written, s_current_playlist->track_count);
+        return ESP_OK;
+    } else {
+        ESP_LOGE(TAG, "Failed to save playlist: %s (written %zu/%zu)", esp_err_to_name(ret), written, json_len);
+        return ESP_FAIL;
+    }
+}
+
+// Phase 1: Load playlist from JSON file on SD card
+esp_err_t sx_playlist_load_from_file(const char *file_path) {
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (file_path == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Read file from SD card
+    size_t file_size = 0;
+    esp_err_t ret = sx_sd_get_file_size(file_path, &file_size);
+    if (ret != ESP_OK || file_size == 0) {
+        ESP_LOGE(TAG, "Failed to get file size for %s", file_path);
+        return ESP_FAIL;
+    }
+    
+    // Allocate buffer for JSON
+    char *json_buffer = (char *)malloc(file_size + 1);
+    if (json_buffer == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    
+    size_t read = 0;
+    ret = sx_sd_read_file(file_path, json_buffer, file_size, &read);
+    if (ret != ESP_OK || read != file_size) {
+        free(json_buffer);
+        ESP_LOGE(TAG, "Failed to read playlist file: %s (read %zu/%zu)", esp_err_to_name(ret), read, file_size);
+        return ESP_FAIL;
+    }
+    
+    json_buffer[file_size] = '\0';
+    
+    // Parse JSON
+    cJSON *json = cJSON_Parse(json_buffer);
+    free(json_buffer);
+    
+    if (json == NULL) {
+        ESP_LOGE(TAG, "Failed to parse JSON from %s", file_path);
+        return ESP_FAIL;
+    }
+    
+    // Extract tracks array
+    cJSON *tracks_array = cJSON_GetObjectItem(json, "tracks");
+    if (tracks_array == NULL || !cJSON_IsArray(tracks_array)) {
+        cJSON_Delete(json);
+        ESP_LOGE(TAG, "Invalid JSON: missing or invalid tracks array");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    size_t track_count = cJSON_GetArraySize(tracks_array);
+    if (track_count == 0) {
+        cJSON_Delete(json);
+        ESP_LOGW(TAG, "Playlist file is empty");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Allocate track paths array
+    const char **track_paths = (const char **)malloc(track_count * sizeof(const char *));
+    if (track_paths == NULL) {
+        cJSON_Delete(json);
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Extract track paths
+    for (size_t i = 0; i < track_count; i++) {
+        cJSON *track_item = cJSON_GetArrayItem(tracks_array, i);
+        if (track_item != NULL && cJSON_IsString(track_item)) {
+            track_paths[i] = track_item->valuestring;
+        } else {
+            track_paths[i] = NULL;
+        }
+    }
+    
+    // Extract other properties
+    cJSON *current_index_item = cJSON_GetObjectItem(json, "current_index");
+    size_t current_index = (current_index_item != NULL && cJSON_IsNumber(current_index_item)) 
+                          ? (size_t)cJSON_GetNumberValue(current_index_item) : 0;
+    
+    cJSON *shuffle_item = cJSON_GetObjectItem(json, "shuffle");
+    bool shuffle = (shuffle_item != NULL && cJSON_IsBool(shuffle_item)) && cJSON_IsTrue(shuffle_item);
+    
+    cJSON *repeat_all_item = cJSON_GetObjectItem(json, "repeat_all");
+    bool repeat_all = (repeat_all_item != NULL && cJSON_IsBool(repeat_all_item)) && cJSON_IsTrue(repeat_all_item);
+    
+    cJSON *repeat_one_item = cJSON_GetObjectItem(json, "repeat_one");
+    bool repeat_one = (repeat_one_item != NULL && cJSON_IsBool(repeat_one_item)) && cJSON_IsTrue(repeat_one_item);
+    
+    cJSON_Delete(json);
+    
+    // Create playlist
+    sx_playlist_t *playlist = NULL;
+    ret = sx_playlist_create(track_paths, track_count, &playlist);
+    free(track_paths);
+    
+    if (ret != ESP_OK || playlist == NULL) {
+        ESP_LOGE(TAG, "Failed to create playlist from loaded data");
+        return ret;
+    }
+    
+    // Set properties
+    if (xSemaphoreTake(s_playlist_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        sx_playlist_free(playlist);
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    playlist->current_index = (current_index < track_count) ? current_index : 0;
+    playlist->shuffle = shuffle;
+    playlist->repeat_all = repeat_all;
+    playlist->repeat_one = repeat_one;
+    
+    // Set as current playlist
+    if (s_current_playlist != NULL) {
+        sx_playlist_free(s_current_playlist);
+    }
+    s_current_playlist = playlist;
+    
+    xSemaphoreGive(s_playlist_mutex);
+    
+    ESP_LOGI(TAG, "Playlist loaded from %s (%zu tracks, index %zu)", file_path, track_count, current_index);
+    return ESP_OK;
 }
 

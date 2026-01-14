@@ -130,9 +130,7 @@
   - Build thành công với tất cả 29 screens
 - Next:
   - Phase 3: Implement touch driver integration + SD RGB565 asset loader
-  - Phase 4: Port services (audio, wifi, ir, chatbot, etc.)
-
-[2025-12-27 03:45] ACTION:
+  - Phase 4: Port services (audio, wifi, ir, chatbot, etc.)[2025-12-27 03:45] ACTION:
 - Goal:
   - Phase 3 implementation: Touch driver + SD RGB565 asset loader
 - Commands:
@@ -161,9 +159,7 @@
   - Bootstrap init touch + assets non-critical (continue nếu fail)
   - UI task tự động add touch input device nếu touch_handles != NULL
 - Next:
-  - Phase 4: Port services (audio, wifi, ir, chatbot, etc.)
-
-[2025-12-27 04:00] ACTION:
+  - Phase 4: Port services (audio, wifi, ir, chatbot, etc.)[2025-12-27 04:00] ACTION:
 - Goal:
   - Phase 4 implementation: Port Audio service (first service)
 - Commands:
@@ -188,9 +184,7 @@
 - Next:
   - Continue Phase 4: SD service, Radio service, IR service, Chatbot/MCP service
   - Hoặc implement I2S hardware cho Audio service
-  - Hardware testing: Flash và verify touch input hoạt động
-
-[2025-12-27 04:35] ACTION:
+  - Hardware testing: Flash và verify touch input hoạt động[2025-12-27 04:35] ACTION:
 - Goal:
   - Update pin mappings từ bread-compact-wifi-lcd config.h + user confirm corrections
 - Commands:

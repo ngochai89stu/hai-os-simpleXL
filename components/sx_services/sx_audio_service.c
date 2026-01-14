@@ -11,6 +11,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "freertos/semphr.h"
 
 #include "sx_dispatcher.h"
 #include "sx_event.h"
@@ -26,6 +27,7 @@
 #include "sx_codec_common.h"
 #include "sx_audio_power.h"
 #include "sx_audio_buffer_pool.h"
+#include "freertos/queue.h"
 #include "driver/i2s_std.h"
 #include <math.h>
 
@@ -42,12 +44,42 @@ static float s_current_volume_factor = 0.5f; // Current volume factor (0.0-1.0) 
 static bool s_volume_ramping = false; // True if volume is currently ramping
 static TaskHandle_t s_volume_ramp_task_handle = NULL;
 
+// Phase 1: Buffer queue giữa decode và feed_pcm
+#define PCM_QUEUE_SIZE 8
+
+// I2S command queue (non-blocking reconfiguration)
+#define I2S_CMD_QUEUE_SIZE 4
+
+typedef enum {
+    I2S_CMD_RECONFIG_SAMPLE_RATE,
+} i2s_cmd_type_t;
+
+typedef struct {
+    i2s_cmd_type_t type;
+    uint32_t sample_rate;
+} i2s_cmd_t;
+
+typedef struct {
+    int16_t *pcm;
+    size_t sample_count;
+    uint32_t sample_rate;
+} pcm_chunk_t;
+
+static QueueHandle_t s_pcm_queue = NULL;
+static TaskHandle_t s_pcm_feed_task_handle = NULL;
+static SemaphoreHandle_t s_pcm_queue_mutex = NULL;
+
+// Command queue & task
+static QueueHandle_t s_i2s_cmd_queue = NULL;
+static TaskHandle_t s_i2s_cmd_task_handle = NULL;
+
 // I2S handles (std mode)
 static i2s_chan_handle_t s_tx_chan = NULL;
 static i2s_chan_handle_t s_rx_chan = NULL;
 static bool s_i2s_ready = false;
 static i2s_std_config_t s_i2s_std_cfg = {0};   // Keep last config for re-apply
-static uint32_t s_current_sample_rate = 16000; // default
+static uint32_t s_current_sample_rate = 16000; // default (last applied)
+static uint32_t s_requested_sample_rate = 16000;
 
 // Playback state
 static FILE *s_playback_file = NULL;
@@ -76,6 +108,9 @@ static SemaphoreHandle_t s_position_mutex = NULL;  // Mutex for position trackin
 // Phase 1: Hybrid Music Screen - Spectrum/FFT data
 static uint16_t s_spectrum_bands[4] = {0, 0, 0, 0};  // Bass, Mid-low, Mid-high, High
 static SemaphoreHandle_t s_spectrum_mutex = NULL;
+
+// Phase 0: State flags mutex (P0 fix - concurrency protection)
+static SemaphoreHandle_t s_state_mutex = NULL;
 
 // Phase 5: FFT processing state (for real FFT with ESP-DSP)
 #ifdef CONFIG_DSP_OPTIMIZED
@@ -187,6 +222,19 @@ esp_err_t sx_audio_service_init(void) {
     s_feed_mutex = xSemaphoreCreateMutex();
     s_position_mutex = xSemaphoreCreateMutex();
     s_spectrum_mutex = xSemaphoreCreateMutex();
+    s_state_mutex = xSemaphoreCreateMutex();
+    // Phase 1: Create PCM queue and mutex
+    s_pcm_queue = xQueueCreate(PCM_QUEUE_SIZE, sizeof(pcm_chunk_t));
+    s_pcm_queue_mutex = xSemaphoreCreateMutex();
+    if (s_pcm_queue == NULL || s_pcm_queue_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create PCM queue or mutex");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    if (s_feed_mutex == NULL || s_position_mutex == NULL || s_spectrum_mutex == NULL || s_state_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create mutexes");
+        return ESP_ERR_NO_MEM;
+    }
     
     // Phase 5: Initialize FFT if ESP-DSP is available
 #ifdef CONFIG_DSP_OPTIMIZED
@@ -293,6 +341,30 @@ esp_err_t sx_audio_service_init(void) {
 
     s_initialized = true;
     s_i2s_ready = true;
+
+    // Phase 1: Create task queues after queue is ready
+    if (s_i2s_cmd_queue == NULL) {
+        s_i2s_cmd_queue = xQueueCreate(I2S_CMD_QUEUE_SIZE, sizeof(i2s_cmd_t));
+    }
+    if (s_i2s_cmd_task_handle == NULL && s_i2s_cmd_queue) {
+        xTaskCreatePinnedToCore(sx_i2s_cmd_task, "sx_i2s_cmd", 4096, NULL, 6, &s_i2s_cmd_task_handle, 0);
+    }
+
+    if (s_pcm_feed_task_handle == NULL) {
+        BaseType_t feed_ret = xTaskCreatePinnedToCore(
+            sx_pcm_feed_task,
+            "sx_pcm_feed",
+            4096,
+            NULL,
+            5,
+            &s_pcm_feed_task_handle,
+            0);
+        if (feed_ret != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create PCM feed task");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
     ESP_LOGI(TAG, "Audio service initialized (I2S ready)");
     return ESP_OK;
 }
@@ -311,6 +383,29 @@ esp_err_t sx_audio_service_start(void) {
 
 #define PLAYBACK_CHUNK_SAMPLES 1024
 #define DECODE_BUFFER_SIZE 4096
+
+// Forward declaration
+enum {
+    PCM_QUEUE_SEND_TIMEOUT_MS = 100 // Timeout when pushing to queue
+};
+
+static void sx_pcm_feed_task(void *arg);
+
+static bool push_pcm_chunk(const int16_t *pcm, size_t samples, uint32_t rate) {
+    if (!s_pcm_queue) return false;
+    pcm_chunk_t chunk = {
+        .pcm = (int16_t *)malloc(samples * sizeof(int16_t)),
+        .sample_count = samples,
+        .sample_rate = rate,
+    };
+    if (chunk.pcm == NULL) return false;
+    memcpy(chunk.pcm, pcm, samples * sizeof(int16_t));
+    if (xQueueSend(s_pcm_queue, &chunk, pdMS_TO_TICKS(PCM_QUEUE_SEND_TIMEOUT_MS)) != pdTRUE) {
+        free(chunk.pcm);
+        return false;
+    }
+    return true;
+}
 
 static void sx_audio_playback_task(void *arg) {
     FILE *f = (FILE *)arg;
@@ -361,7 +456,38 @@ static void sx_audio_playback_task(void *arg) {
     
     uint32_t sample_rate = SX_AUDIO_SAMPLE_RATE;
     
-    while (!feof(f) && s_playing && !s_paused) {
+    // Phase 0: Read state flags safely for loop condition
+    bool playing = true;
+    bool paused = false;
+    
+    // Phase 2: Gapless playback - check if we should preload next track
+    uint32_t duration = sx_audio_get_duration();
+    uint32_t position = 0;
+    bool next_preload_triggered = false;
+    const uint32_t PRELOAD_TRIGGER_SECONDS = 2; // Preload when 2 seconds remaining
+    
+    while (!feof(f)) {
+        // Phase 0: Check state flags with mutex protection
+        if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, 0) == pdTRUE) {
+            playing = s_playing;
+            paused = s_paused;
+            xSemaphoreGive(s_state_mutex);
+        }
+        if (!playing || paused) {
+            break;
+        }
+        
+        // Phase 2: Gapless playback - trigger preload when near end
+        if (!next_preload_triggered && duration > PRELOAD_TRIGGER_SECONDS) {
+            position = sx_audio_get_position();
+            if (position > 0 && duration > position && 
+                (duration - position) <= PRELOAD_TRIGGER_SECONDS) {
+                // Preload next track when 2 seconds remaining
+                sx_playlist_preload_next();
+                next_preload_triggered = true;
+                ESP_LOGD(TAG, "Gapless: Preloading next track (position: %u/%u)", position, duration);
+            }
+        }
         if (format == SX_AUDIO_FILE_FORMAT_MP3 && mp3_decoder_initialized && decode_buffer) {
             // Read MP3 data
             size_t bytes_read = fread(decode_buffer, 1, DECODE_BUFFER_SIZE, f);
@@ -387,7 +513,11 @@ static void sx_audio_playback_task(void *arg) {
                     pcm_buf[i] = (int16_t)(pcm_buf[i] * s_current_volume_factor);
                 }
                 
+                if (!push_pcm_chunk(pcm_buf, pcm_samples, sample_rate)) {
+                    if (!push_pcm_chunk(pcm_buf, pcm_samples, sample_rate)) {
                 sx_audio_service_feed_pcm(pcm_buf, pcm_samples, sample_rate);
+            }
+                }
                 
                 // Phase 1: Track playback position
                 if (s_position_mutex != NULL && xSemaphoreTake(s_position_mutex, 0) == pdTRUE) {
@@ -430,7 +560,9 @@ static void sx_audio_playback_task(void *arg) {
                     pcm_buf[i] = (int16_t)(pcm_buf[i] * s_current_volume_factor);
                 }
                 
+                if (!push_pcm_chunk(pcm_buf, pcm_samples, sample_rate)) {
                 sx_audio_service_feed_pcm(pcm_buf, pcm_samples, sample_rate);
+            }
                 
                 // Phase 1: Track playback position
                 if (s_position_mutex != NULL && xSemaphoreTake(s_position_mutex, 0) == pdTRUE) {
@@ -466,7 +598,9 @@ static void sx_audio_playback_task(void *arg) {
                 pcm_buf[i] = (int16_t)(pcm_buf[i] * s_current_volume_factor);
             }
             
+            if (!push_pcm_chunk(pcm_buf, read, sample_rate)) {
             sx_audio_service_feed_pcm(pcm_buf, read, sample_rate);
+        }
             
             // Phase 1: Track playback position
             if (s_position_mutex != NULL && xSemaphoreTake(s_position_mutex, 0) == pdTRUE) {
@@ -493,11 +627,20 @@ static void sx_audio_playback_task(void *arg) {
     
     free(pcm_buf);
     fclose(f);
-    s_playing = false;
+    
+    // Phase 0: Protect state flags write
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_playing = false;
+        xSemaphoreGive(s_state_mutex);
+    }
     s_playback_task_handle = NULL;
     
-    // Phase 5: Gapless playback - preload next track before stopping
-    sx_playlist_preload_next();
+    // Phase 2: Gapless playback - preload next track early (if not already done)
+    // Note: Preload should have been triggered earlier when track was near end
+    // This is a fallback in case preload wasn't triggered
+    if (!sx_playlist_is_next_preloaded()) {
+        sx_playlist_preload_next();
+    }
     
     // Dispatch playback stopped event for auto-play next track
     sx_event_t evt = {
@@ -514,7 +657,15 @@ static void sx_audio_playback_task(void *arg) {
 esp_err_t sx_audio_play_file(const char *file_path) {
     if (!s_initialized || !s_i2s_ready) return ESP_ERR_INVALID_STATE;
     if (!file_path) return ESP_ERR_INVALID_ARG;
-    if (s_playing) {
+    
+    // Phase 0: Protect state flags access
+    bool is_playing = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        is_playing = s_playing;
+        xSemaphoreGive(s_state_mutex);
+    }
+    
+    if (is_playing) {
         sx_audio_stop();
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -531,12 +682,21 @@ esp_err_t sx_audio_play_file(const char *file_path) {
     } else {
         fseek(f, 0, SEEK_SET); // raw pcm
     }
-    s_playing = true;
-    // Tối ưu: Giảm stack size từ 4096 xuống 3072 để tiết kiệm memory
-    BaseType_t ret = xTaskCreatePinnedToCore(sx_audio_playback_task, "sx_audio_file", 3072, f, 4, &s_playback_task_handle, 0);
+    
+    // Phase 0: Protect state flags write
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_playing = true;
+        xSemaphoreGive(s_state_mutex);
+    }
+    
+    // Phase 0: Increase priority to 5 and stack size to 4096 to prevent audio underrun
+    BaseType_t ret = xTaskCreatePinnedToCore(sx_audio_playback_task, "sx_audio_file", 4096, f, 5, &s_playback_task_handle, 0);
     if (ret!=pdPASS) {
         fclose(f);
-        s_playing = false;
+        if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_playing = false;
+            xSemaphoreGive(s_state_mutex);
+        }
         return ESP_ERR_NO_MEM;
     }
     strncpy(s_current_file, file_path, sizeof(s_current_file)-1);
@@ -566,8 +726,12 @@ esp_err_t sx_audio_play_file(const char *file_path) {
 }
 
 esp_err_t sx_audio_stop(void) {
-    s_playing = false;
-    s_paused = false;
+    // Phase 0: Protect state flags write
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_playing = false;
+        s_paused = false;
+        xSemaphoreGive(s_state_mutex);
+    }
     if (s_playback_task_handle != NULL) {
         vTaskDelay(pdMS_TO_TICKS(100));
         if (s_playback_task_handle != NULL) {
@@ -583,24 +747,48 @@ esp_err_t sx_audio_stop(void) {
 }
 
 esp_err_t sx_audio_pause(void) {
-    s_paused = true;
+    // Phase 0: Protect state flags write
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_paused = true;
+        xSemaphoreGive(s_state_mutex);
+    }
     return ESP_OK;
 }
 
 esp_err_t sx_audio_resume(void) {
-    s_paused = false;
+    // Phase 0: Protect state flags write
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_paused = false;
+        xSemaphoreGive(s_state_mutex);
+    }
     return ESP_OK;
 }
 
 bool sx_audio_is_playing(void) {
-    return s_playing && !s_paused;
+    // Phase 0: Protect state flags read
+    bool playing = false;
+    bool paused = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        playing = s_playing;
+        paused = s_paused;
+        xSemaphoreGive(s_state_mutex);
+    }
+    return playing && !paused;
 }
 
 esp_err_t sx_audio_start_recording(void) {
     if (!s_initialized || !s_i2s_ready) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (s_recording) {
+    
+    // Phase 0: Protect state flags read
+    bool is_recording = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        is_recording = s_recording;
+        xSemaphoreGive(s_state_mutex);
+    }
+    
+    if (is_recording) {
         return ESP_OK;
     }
     if (s_rx_chan == NULL) {
@@ -612,7 +800,13 @@ esp_err_t sx_audio_start_recording(void) {
         ESP_LOGE(TAG, "Failed to enable RX channel: %s", esp_err_to_name(ret));
         return ret;
     }
-    s_recording = true;
+    
+    // Phase 0: Protect state flags write
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_recording = true;
+        xSemaphoreGive(s_state_mutex);
+    }
+    
     // Notify audio power management
     sx_audio_power_notify_activity();
     BaseType_t task_ret = xTaskCreatePinnedToCore(
@@ -625,7 +819,10 @@ esp_err_t sx_audio_start_recording(void) {
         1
     );
     if (task_ret != pdPASS) {
-        s_recording = false;
+        if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_recording = false;
+            xSemaphoreGive(s_state_mutex);
+        }
         i2s_channel_disable(s_rx_chan);
         return ESP_ERR_NO_MEM;
     }
@@ -634,10 +831,23 @@ esp_err_t sx_audio_start_recording(void) {
 }
 
 esp_err_t sx_audio_stop_recording(void) {
-    if (!s_recording) {
+    // Phase 0: Protect state flags read
+    bool is_recording = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        is_recording = s_recording;
+        xSemaphoreGive(s_state_mutex);
+    }
+    
+    if (!is_recording) {
         return ESP_OK;
     }
-    s_recording = false;
+    
+    // Phase 0: Protect state flags write
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_recording = false;
+        xSemaphoreGive(s_state_mutex);
+    }
+    
     if (s_recording_task_handle != NULL) {
         vTaskDelay(pdMS_TO_TICKS(100));
         if (s_recording_task_handle != NULL) {
@@ -653,7 +863,13 @@ esp_err_t sx_audio_stop_recording(void) {
 }
 
 bool sx_audio_is_recording(void) {
-    return s_recording;
+    // Phase 0: Protect state flags read
+    bool recording = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        recording = s_recording;
+        xSemaphoreGive(s_state_mutex);
+    }
+    return recording;
 }
 
 esp_err_t sx_audio_start_recording_with_stt(void) {
@@ -726,18 +942,10 @@ esp_err_t sx_audio_service_feed_pcm(const int16_t *pcm, size_t sample_count, uin
         return ESP_ERR_INVALID_STATE;
     }
 
-    // If sample rate changed, reconfigure I2S on-the-fly (blocking)
+    // If sample rate changed, push command; do not block
     if (sample_rate_hz != s_current_sample_rate) {
-        s_i2s_std_cfg.clk_cfg.sample_rate_hz = sample_rate_hz;
-        i2s_channel_disable(s_tx_chan);
-        i2s_channel_init_std_mode(s_tx_chan, &s_i2s_std_cfg);
-        i2s_channel_enable(s_tx_chan);
-        s_current_sample_rate = sample_rate_hz;
-        // Update EQ sample rate
-        sx_audio_eq_set_sample_rate(sample_rate_hz);
-        // Update crossfade sample rate
-        sx_audio_crossfade_set_sample_rate(sample_rate_hz);
-        ESP_LOGI(TAG, "I2S sample rate updated to %u Hz", sample_rate_hz);
+        s_requested_sample_rate = sample_rate_hz;
+        push_i2s_cmd_reconfig(sample_rate_hz);
     }
 
     if (s_tx_chan == NULL) {
@@ -788,6 +996,60 @@ esp_err_t sx_audio_service_feed_pcm(const int16_t *pcm, size_t sample_count, uin
     return (ret == ESP_OK && written == bytes_to_write) ? ESP_OK : ESP_FAIL;
 }
 
+// I2S command queue task
+static void sx_i2s_cmd_task(void *arg) {
+    (void)arg;
+    ESP_LOGI(TAG, "I2S cmd task started");
+    i2s_cmd_t cmd;
+    for (;;) {
+        if (xQueueReceive(s_i2s_cmd_queue, &cmd, portMAX_DELAY) == pdTRUE) {
+            if (cmd.type == I2S_CMD_RECONFIG_SAMPLE_RATE) {
+                uint32_t new_rate = cmd.sample_rate;
+                ESP_LOGI(TAG, "Reconfig I2S sample_rate -> %u", new_rate);
+                i2s_channel_disable(s_tx_chan);
+                s_i2s_std_cfg.clk_cfg.sample_rate_hz = new_rate;
+                i2s_channel_init_std_mode(s_tx_chan, &s_i2s_std_cfg);
+                i2s_channel_enable(s_tx_chan);
+                s_current_sample_rate = new_rate;
+                sx_audio_eq_set_sample_rate(new_rate);
+                sx_audio_crossfade_set_sample_rate(new_rate);
+            }
+        }
+    }
+}
+
+static bool push_i2s_cmd_reconfig(uint32_t sample_rate) {
+    if (!s_i2s_cmd_queue) return false;
+    i2s_cmd_t cmd = {
+        .type = I2S_CMD_RECONFIG_SAMPLE_RATE,
+        .sample_rate = sample_rate
+    };
+    return (xQueueSend(s_i2s_cmd_queue, &cmd, 0) == pdTRUE);
+}
+
+// PCM feed task - consumes queue and writes to I2S
+static void sx_pcm_feed_task(void *arg) {
+    (void)arg;
+    ESP_LOGI(TAG, "PCM feed task started");
+
+    pcm_chunk_t chunk;
+    TickType_t underrun_log_ts = 0;
+
+    for (;;) {
+        if (xQueueReceive(s_pcm_queue, &chunk, pdMS_TO_TICKS(200)) == pdTRUE) {
+            sx_audio_service_feed_pcm(chunk.pcm, chunk.sample_count, chunk.sample_rate);
+            free(chunk.pcm);
+        } else {
+            // Queue empty for 200ms -> underrun
+            TickType_t now = xTaskGetTickCount();
+            if (now - underrun_log_ts > pdMS_TO_TICKS(1000)) {
+                ESP_LOGW(TAG, "Audio underrun: PCM queue empty");
+                underrun_log_ts = now;
+            }
+        }
+    }
+}
+
 // Volume ramp task - smooth transition between volume levels
 static void sx_audio_volume_ramp_task(void *arg) {
     (void)arg;
@@ -836,11 +1098,26 @@ static void sx_audio_recording_task(void *arg) {
     int16_t *pcm_buf = malloc(RECORDING_BUFFER_SAMPLES * sizeof(int16_t));
     if (!pcm_buf) {
         ESP_LOGE(TAG, "No mem for recording buffer");
-        s_recording = false;
+        // Phase 0: Protect state flags write
+        if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_recording = false;
+            xSemaphoreGive(s_state_mutex);
+        }
         vTaskDelete(NULL);
         return;
     }
-    while (s_recording) {
+    
+    // Phase 0: Read state flags safely for loop condition
+    bool recording = true;
+    while (recording) {
+        // Phase 0: Check state flags with mutex protection
+        if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, 0) == pdTRUE) {
+            recording = s_recording;
+            xSemaphoreGive(s_state_mutex);
+        }
+        if (!recording) {
+            break;
+        }
         size_t bytes_read = 0;
         esp_err_t ret = i2s_channel_read(s_rx_chan, pcm_buf, RECORDING_BUFFER_SAMPLES * sizeof(int16_t), &bytes_read, pdMS_TO_TICKS(100));
         if (ret == ESP_OK && bytes_read > 0) {
@@ -957,7 +1234,15 @@ esp_err_t sx_audio_get_spectrum(uint16_t *bands, size_t band_count) {
     }
     
     // Phase 5: Process spectrum data
-    if (s_playing && !s_paused) {
+    // Phase 0: Protect state flags read
+    bool playing = false;
+    bool paused = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        playing = s_playing;
+        paused = s_paused;
+        xSemaphoreGive(s_state_mutex);
+    }
+    if (playing && !paused) {
 #ifdef CONFIG_DSP_OPTIMIZED
         // Use real FFT if available and buffer is full
         if (s_fft_initialized && s_pcm_buffer_pos >= FFT_SIZE) {
@@ -1048,6 +1333,16 @@ esp_err_t sx_audio_get_spectrum(uint16_t *bands, size_t band_count) {
     bands[3] = s_spectrum_bands[3];  // High
     
     xSemaphoreGive(s_spectrum_mutex);
+    
+    // Phase 1: Update state with spectrum data (for UI to read without direct call)
+    sx_state_t state;
+    if (sx_dispatcher_get_state(&state) == ESP_OK) {
+        state.audio.spectrum_bands[0] = s_spectrum_bands[0];
+        state.audio.spectrum_bands[1] = s_spectrum_bands[1];
+        state.audio.spectrum_bands[2] = s_spectrum_bands[2];
+        state.audio.spectrum_bands[3] = s_spectrum_bands[3];
+        sx_dispatcher_set_state(&state);
+    }
     
     // TODO: Implement actual FFT processing
     // For now, return simulated data (will be updated when FFT is implemented)

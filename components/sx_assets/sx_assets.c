@@ -3,6 +3,8 @@
 #include <esp_log.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include "esp_vfs_fat.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
@@ -46,39 +48,111 @@ esp_err_t sx_assets_init(void) {
     return ESP_OK;
 }
 
-sx_asset_handle_t sx_assets_load_rgb565(const char *path, sx_asset_info_t *info) {
-    if (path == NULL || info == NULL) {
+static bool sx_assets_check_sd(void) {
+    if (!s_sd_mounted) {
+        ESP_LOGE(TAG, "SD card not mounted");
+        return false;
+    }
+    return true;
+}
+
+sx_asset_handle_t sx_assets_load_rgb565(const char *path, sx_asset_info_t *out_info) {
+    if (path == NULL || out_info == NULL) {
         ESP_LOGE(TAG, "Invalid arguments");
         return NULL;
     }
-    
-    if (!s_sd_mounted) {
-        ESP_LOGE(TAG, "SD card not mounted");
+
+    if (!sx_assets_check_sd()) {
         return NULL;
     }
-    
-    ESP_LOGI(TAG, "Loading RGB565 asset: %s", path);
-    
-    // Future: Phase 3 - Load RGB565 from SD card
-    // Implementation plan:
-    // 1. Open file from SD card using standard file I/O
-    // 2. Read header (optional: width, height) or use fixed size
-    // 3. Allocate buffer for RGB565 data (consider using sx_audio_buffer_pool pattern)
-    // 4. Read data into buffer
-    // 5. Return handle for asset management
-    // 5. Return asset handle
-    
-    ESP_LOGW(TAG, "Asset loading stub - will be fully implemented in Phase 3");
-    
-    // Stub: return NULL for now
-    return NULL;
+
+    // Build full path
+    char full_path[256];
+    snprintf(full_path, sizeof(full_path), "%s/%s", SD_MOUNT_POINT, path);
+
+    struct stat st;
+    if (stat(full_path, &st) != 0) {
+        ESP_LOGE(TAG, "Failed to stat %s: %s", full_path, strerror(errno));
+        return NULL;
+    }
+
+    if (st.st_size == 0) {
+        ESP_LOGE(TAG, "File %s is empty", full_path);
+        return NULL;
+    }
+
+    if (st.st_size % 2 != 0) {
+        ESP_LOGW(TAG, "RGB565 file size is not even (%lld bytes) – extra byte will be ignored", (long long)st.st_size);
+    }
+
+    FILE *f = fopen(full_path, "rb");
+    if (!f) {
+        ESP_LOGE(TAG, "Failed to open %s: %s", full_path, strerror(errno));
+        return NULL;
+    }
+
+    // Allocate asset structure + pixel buffer
+    struct sx_asset *asset = calloc(1, sizeof(struct sx_asset));
+    if (!asset) {
+        ESP_LOGE(TAG, "No mem for asset struct");
+        fclose(f);
+        return NULL;
+    }
+
+    uint32_t size_bytes = (uint32_t)st.st_size & ~1U; // ensure even
+    asset->data = malloc(size_bytes);
+    if (!asset->data) {
+        ESP_LOGE(TAG, "No mem for asset data (%u bytes)", size_bytes);
+        free(asset);
+        fclose(f);
+        return NULL;
+    }
+
+    size_t read_bytes = fread(asset->data, 1, size_bytes, f);
+    fclose(f);
+    if (read_bytes != size_bytes) {
+        ESP_LOGE(TAG, "Short read: expected %u, got %zu", size_bytes, read_bytes);
+        free(asset->data);
+        free(asset);
+        return NULL;
+    }
+
+    // Populate info (caller expected to set width/height beforehand if known)
+    asset->info = *out_info; // copy width/height from caller
+    asset->info.size_bytes = size_bytes;
+
+    // If width/height not provided, attempt to guess standard 320x480/480x320 etc.
+    if (asset->info.width == 0 || asset->info.height == 0) {
+        // Simple heuristics: common LCD resolutions
+        uint32_t pixel_cnt = size_bytes / 2;
+        if (pixel_cnt == 320 * 480) {
+            asset->info.width = 320;
+            asset->info.height = 480;
+        } else if (pixel_cnt == 480 * 320) {
+            asset->info.width = 480;
+            asset->info.height = 320;
+        } else if (pixel_cnt == 240 * 240) {
+            asset->info.width = 240;
+            asset->info.height = 240;
+        } else {
+            asset->info.width = 0;
+            asset->info.height = 0;
+        }
+    }
+
+    ESP_LOGI(TAG, "Loaded asset %s (%ux%u, %u bytes)", path, asset->info.width, asset->info.height, size_bytes);
+
+    // Return info to caller
+    *out_info = asset->info;
+
+    return asset;
 }
 
 const uint16_t* sx_assets_get_data(sx_asset_handle_t handle) {
     if (handle == NULL) {
         return NULL;
     }
-    
+
     return handle->data;
 }
 
@@ -86,7 +160,7 @@ void sx_assets_free(sx_asset_handle_t handle) {
     if (handle == NULL) {
         return;
     }
-    
+
     if (handle->data != NULL) {
         free(handle->data);
     }
@@ -134,4 +208,3 @@ const sx_embedded_img_data_t* sx_assets_get_flashscreen_data(void) {
     };
     return &s_flashscreen_data;
 }
-

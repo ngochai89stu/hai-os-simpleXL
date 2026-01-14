@@ -1,5 +1,6 @@
 ﻿#include "sx_sd_music_service.h"
 #include "sx_sd_service.h"
+#include "sx_spi_bus_manager.h"  // Phase 3: SPI bus lock for shared bus
 #include <esp_log.h>
 #include <string.h>
 #include <stdio.h>
@@ -235,8 +236,11 @@ esp_err_t sx_sd_music_get_metadata(const char *file_path, sx_sd_music_metadata_t
     char full_path[512];
     snprintf(full_path, sizeof(full_path), "%s%s", mount_point, file_path);
     
+    // Phase 3: Add SPI bus lock to prevent race condition with LCD (shared SPI bus)
+    sx_spi_bus_lock();
     FILE *f = fopen(full_path, "rb");
     if (!f) {
+        sx_spi_bus_unlock();
         return ESP_FAIL;
     }
     
@@ -251,6 +255,7 @@ esp_err_t sx_sd_music_get_metadata(const char *file_path, sx_sd_music_metadata_t
     }
     
     fclose(f);
+    sx_spi_bus_unlock();
     return ESP_OK;
 }
 
@@ -270,6 +275,14 @@ esp_err_t sx_sd_music_list_files(const char *dir_path, sx_sd_music_entry_t *entr
     esp_err_t ret = sx_sd_list_files(dir_path, file_entries, max_count, &file_count);
     if (ret != ESP_OK) {
         free(file_entries);
+        
+        // Phase 3: Check if SD card was removed (hot-unplug detection)
+        // Note: sx_sd_list_files already posts alert event, but we check here too for safety
+        if (!sx_sd_is_mounted()) {
+            // Event already posted by sx_sd_list_files, just log here
+            ESP_LOGW(TAG, "SD card removed during music list operation");
+        }
+        
         return ret;
     }
     

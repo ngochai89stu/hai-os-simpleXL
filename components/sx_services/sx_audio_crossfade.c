@@ -19,6 +19,14 @@ static uint32_t s_total_fade_samples = 0;
 static uint32_t s_sample_rate = 16000; // Default sample rate
 static SemaphoreHandle_t s_crossfade_mutex = NULL;
 
+// Phase 2: Full crossfade implementation - buffers for old and new PCM
+#define CROSSFADE_BUFFER_MAX_SAMPLES 4096  // Max samples to buffer (enough for ~250ms at 16kHz)
+static int16_t *s_old_pcm_buffer = NULL;  // Old track buffer (fading out)
+static int16_t *s_new_pcm_buffer = NULL;  // New track buffer (fading in)
+static size_t s_crossfade_buffer_samples = 0;  // Size of buffers in samples
+static size_t s_new_pcm_samples_available = 0;  // How many new PCM samples we have
+static size_t s_new_pcm_samples_consumed = 0;   // How many new PCM samples we've used
+
 esp_err_t sx_audio_crossfade_init(const sx_audio_crossfade_config_t *config) {
     if (s_initialized) {
         return ESP_OK;
@@ -39,13 +47,30 @@ esp_err_t sx_audio_crossfade_init(const sx_audio_crossfade_config_t *config) {
         return ESP_ERR_NO_MEM;
     }
     
+    // Phase 2: Allocate buffers for full crossfade
+    s_crossfade_buffer_samples = CROSSFADE_BUFFER_MAX_SAMPLES;
+    s_old_pcm_buffer = (int16_t *)malloc(s_crossfade_buffer_samples * sizeof(int16_t));
+    s_new_pcm_buffer = (int16_t *)malloc(s_crossfade_buffer_samples * sizeof(int16_t));
+    
+    if (s_old_pcm_buffer == NULL || s_new_pcm_buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate crossfade buffers");
+        if (s_old_pcm_buffer) free(s_old_pcm_buffer);
+        if (s_new_pcm_buffer) free(s_new_pcm_buffer);
+        s_old_pcm_buffer = NULL;
+        s_new_pcm_buffer = NULL;
+        vSemaphoreDelete(s_crossfade_mutex);
+        return ESP_ERR_NO_MEM;
+    }
+    
     s_initialized = true;
     s_state = SX_CROSSFADE_IDLE;
     s_samples_processed = 0;
     s_total_fade_samples = 0;
+    s_new_pcm_samples_available = 0;
+    s_new_pcm_samples_consumed = 0;
     
-    ESP_LOGI(TAG, "Crossfade engine initialized (fade_duration=%lu ms, enabled=%d)",
-             (unsigned long)s_fade_duration_ms, s_enabled);
+    ESP_LOGI(TAG, "Crossfade engine initialized (fade_duration=%lu ms, enabled=%d, buffer=%zu samples)",
+             (unsigned long)s_fade_duration_ms, s_enabled, s_crossfade_buffer_samples);
     return ESP_OK;
 }
 
@@ -58,23 +83,37 @@ esp_err_t sx_audio_crossfade_start(const int16_t *old_pcm, const int16_t *new_pc
         return ESP_ERR_INVALID_ARG;
     }
     
+    if (s_old_pcm_buffer == NULL || s_new_pcm_buffer == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
     if (xSemaphoreTake(s_crossfade_mutex, portMAX_DELAY) != pdTRUE) {
         return ESP_ERR_TIMEOUT;
     }
     
+    // Phase 2: Copy old and new PCM buffers
+    size_t samples_to_copy = (sample_count > s_crossfade_buffer_samples) ? s_crossfade_buffer_samples : sample_count;
+    memcpy(s_old_pcm_buffer, old_pcm, samples_to_copy * sizeof(int16_t));
+    memcpy(s_new_pcm_buffer, new_pcm, samples_to_copy * sizeof(int16_t));
+    
     // Calculate total fade samples based on sample rate
     s_total_fade_samples = (s_sample_rate * s_fade_duration_ms) / 1000;
-    if (s_total_fade_samples > sample_count) {
-        s_total_fade_samples = sample_count; // Limit to available samples
+    if (s_total_fade_samples > samples_to_copy) {
+        s_total_fade_samples = samples_to_copy; // Limit to available samples
+    }
+    if (s_total_fade_samples == 0) {
+        s_total_fade_samples = samples_to_copy; // At least fade the available samples
     }
     
     s_samples_processed = 0;
+    s_new_pcm_samples_available = samples_to_copy;
+    s_new_pcm_samples_consumed = 0;
     s_state = SX_CROSSFADE_FADING_OUT;
     
     xSemaphoreGive(s_crossfade_mutex);
     
     ESP_LOGD(TAG, "Crossfade started (%zu samples, %lu fade samples)",
-             sample_count, (unsigned long)s_total_fade_samples);
+             samples_to_copy, (unsigned long)s_total_fade_samples);
     
     return ESP_OK;
 }
@@ -96,46 +135,59 @@ bool sx_audio_crossfade_process(int16_t *pcm, size_t sample_count) {
     bool still_active = false;
     
     if (s_state == SX_CROSSFADE_FADING_OUT || s_state == SX_CROSSFADE_FADING_IN) {
-        // Calculate fade factor (0.0 to 1.0)
-        float fade_progress = (float)s_samples_processed / (float)s_total_fade_samples;
-        if (fade_progress > 1.0f) fade_progress = 1.0f;
-        
-        float old_gain;
-        float new_gain __attribute__((unused)); // Reserved for future full crossfade implementation
-        
-        if (s_state == SX_CROSSFADE_FADING_OUT) {
-            // Fade out: old_gain decreases from 1.0 to 0.0
-            old_gain = 1.0f - fade_progress;
-            new_gain = fade_progress;
-            
-            // Switch to fading in when halfway
-            if (fade_progress >= 0.5f && s_state == SX_CROSSFADE_FADING_OUT) {
-                s_state = SX_CROSSFADE_FADING_IN;
-            }
-        } else {
-            // Fade in: new_gain increases from 0.5 to 1.0
-            old_gain = 1.0f - fade_progress;
-            new_gain = fade_progress;
+        // Phase 2: Full crossfade - mix old_pcm (fading out) and new_pcm (fading in)
+        size_t samples_to_process = sample_count;
+        if (samples_to_process > (s_total_fade_samples - s_samples_processed)) {
+            samples_to_process = s_total_fade_samples - s_samples_processed;
+        }
+        if (samples_to_process > (s_new_pcm_samples_available - s_new_pcm_samples_consumed)) {
+            samples_to_process = s_new_pcm_samples_available - s_new_pcm_samples_consumed;
         }
         
-        // Apply crossfade to PCM samples
-        for (size_t i = 0; i < sample_count && s_samples_processed < s_total_fade_samples; i++) {
-            // For now, we only have one PCM buffer, so we apply fade out
-            // In a full implementation, we would mix old_pcm and new_pcm
-            pcm[i] = (int16_t)(pcm[i] * old_gain);
-            s_samples_processed++;
-            
-            // Update fade progress
+        for (size_t i = 0; i < samples_to_process && s_samples_processed < s_total_fade_samples; i++) {
+            // Calculate gains for this sample
             fade_progress = (float)s_samples_processed / (float)s_total_fade_samples;
             if (fade_progress > 1.0f) fade_progress = 1.0f;
             
-            if (s_state == SX_CROSSFADE_FADING_OUT && fade_progress >= 0.5f) {
+            // Use smooth curve (sine or linear) for better audio quality
+            // Linear fade: old_gain = 1.0 - fade_progress, new_gain = fade_progress
+            // Sine fade (smoother): old_gain = cos(fade_progress * PI/2), new_gain = sin(fade_progress * PI/2)
+            // Using linear for now (can be optimized later)
+            old_gain = 1.0f - fade_progress;
+            new_gain = fade_progress;
+            
+            // Get samples from buffers
+            int16_t old_sample = (s_samples_processed < s_crossfade_buffer_samples) ? 
+                                 s_old_pcm_buffer[s_samples_processed] : 0;
+            int16_t new_sample = (s_new_pcm_samples_consumed < s_new_pcm_samples_available) ?
+                                 s_new_pcm_buffer[s_new_pcm_samples_consumed] : 0;
+            
+            // Mix: output = old * old_gain + new * new_gain
+            float mixed = (float)old_sample * old_gain + (float)new_sample * new_gain;
+            
+            // Clamp to int16_t range
+            if (mixed > 32767.0f) mixed = 32767.0f;
+            if (mixed < -32768.0f) mixed = -32768.0f;
+            
+            pcm[i] = (int16_t)mixed;
+            
+            s_samples_processed++;
+            s_new_pcm_samples_consumed++;
+            
+            // Switch to fading in when halfway (optional, for state tracking)
+            if (fade_progress >= 0.5f && s_state == SX_CROSSFADE_FADING_OUT) {
                 s_state = SX_CROSSFADE_FADING_IN;
-                old_gain = 1.0f - fade_progress;
-                new_gain = fade_progress;
-            } else if (s_state == SX_CROSSFADE_FADING_IN) {
-                old_gain = 1.0f - fade_progress;
-                new_gain = fade_progress;
+            }
+        }
+        
+        // If we didn't process all samples, fill remaining with new track (if available)
+        if (samples_to_process < sample_count && s_new_pcm_samples_consumed < s_new_pcm_samples_available) {
+            size_t remaining = sample_count - samples_to_process;
+            size_t new_remaining = s_new_pcm_samples_available - s_new_pcm_samples_consumed;
+            if (remaining > new_remaining) remaining = new_remaining;
+            
+            for (size_t i = samples_to_process; i < samples_to_process + remaining; i++) {
+                pcm[i] = s_new_pcm_buffer[s_new_pcm_samples_consumed++];
             }
         }
         
@@ -179,6 +231,8 @@ esp_err_t sx_audio_crossfade_stop(void) {
     s_state = SX_CROSSFADE_IDLE;
     s_samples_processed = 0;
     s_total_fade_samples = 0;
+    s_new_pcm_samples_available = 0;
+    s_new_pcm_samples_consumed = 0;
     
     xSemaphoreGive(s_crossfade_mutex);
     

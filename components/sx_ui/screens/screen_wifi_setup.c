@@ -8,8 +8,13 @@
 #include "screen_common.h"
 #include "sx_ui_verify.h"
 #include "sx_state.h"
-#include "sx_wifi_service.h"
+#include "sx_dispatcher.h"
+#include "sx_event.h"
+#include "sx_event_payloads.h"
+// Phase 1: Remove direct include of sx_wifi_service.h (break circular dependency)
+// #include "sx_wifi_service.h"  // Removed - use events instead
 #include "sx_settings_service.h"
+#include <stdlib.h>  // For malloc/free
 #include "sx_qr_code_service.h"
 #include "ui_qr_code_helpers.h"
 #include "ui_theme_tokens.h"
@@ -40,6 +45,10 @@ static void show_password_dialog(const char *ssid);
 
 static void on_create(void) {
     ESP_LOGI(TAG, "Wi-Fi Setup screen onCreate");
+    
+    // Phase 1: Subscribe to WiFi events (break circular dependency)
+    // Note: This requires event subscription API in dispatcher
+    // For now, we'll use a workaround via state polling or direct event check
     
     lv_obj_t *container = ui_router_get_container();
     if (container == NULL) {
@@ -169,9 +178,23 @@ static void network_item_click_cb(lv_event_t *e) {
                 s_pending_ssid[sizeof(s_pending_ssid) - 1] = '\0';
                 show_password_dialog(network->ssid);
             } else {
-                // Connect without password
-                esp_err_t ret = sx_wifi_connect(network->ssid, NULL);
-                if (ret == ESP_OK) {
+                // Phase 1: Post connect request event (no password)
+                ESP_LOGI(TAG, "Connecting to %s (no password)", network->ssid);
+                sx_wifi_connect_request_payload_t *payload = (sx_wifi_connect_request_payload_t *)malloc(sizeof(sx_wifi_connect_request_payload_t));
+                if (payload != NULL) {
+                    strncpy(payload->ssid, network->ssid, sizeof(payload->ssid) - 1);
+                    payload->ssid[sizeof(payload->ssid) - 1] = '\0';
+                    payload->has_password = false;
+                    payload->password[0] = '\0';
+                    
+                    sx_event_t connect_evt = {
+                        .type = SX_EVT_WIFI_CONNECT_REQUEST,
+                        .arg0 = 0,
+                        .arg1 = 0,
+                        .ptr = payload
+                    };
+                    sx_dispatcher_post_event(&connect_evt);
+                    
                     // Save WiFi SSID to settings
                     sx_settings_set_string("wifi_ssid", network->ssid);
                     sx_settings_commit();
@@ -180,12 +203,6 @@ static void network_item_click_cb(lv_event_t *e) {
                         char msg[128];
                         snprintf(msg, sizeof(msg), "Connecting to: %s", network->ssid);
                         lv_label_set_text(s_status_label, msg);
-                        lvgl_port_unlock();
-                    }
-                } else {
-                    ESP_LOGE(TAG, "Failed to connect: %s", esp_err_to_name(ret));
-                    if (s_status_label != NULL && lvgl_port_lock(0)) {
-                        lv_label_set_text(s_status_label, "Connection failed");
                         lvgl_port_unlock();
                     }
                 }
@@ -202,28 +219,17 @@ static void scan_btn_cb(lv_event_t *e) {
             lv_label_set_text(s_status_label, "Scanning...");
         }
         
-        // Perform WiFi scan
-        s_network_count = sx_wifi_scan(s_networks, 20);
+        // Phase 1: Post scan request event instead of direct call
+        sx_event_t scan_evt = {
+            .type = SX_EVT_WIFI_SCAN_REQUEST,
+            .arg0 = 0,
+            .arg1 = 0,
+            .ptr = NULL
+        };
+        sx_dispatcher_post_event(&scan_evt);
         
-        if (s_network_count == 0) {
-            ESP_LOGE(TAG, "WiFi scan failed");
-            if (s_status_label != NULL) {
-                lv_label_set_text(s_status_label, "Scan failed");
-            }
-        } else {
-            ESP_LOGI(TAG, "Found %d networks", s_network_count);
-            if (s_status_label != NULL) {
-                char status[64];
-                snprintf(status, sizeof(status), "Found %d networks", s_network_count);
-                lv_label_set_text(s_status_label, status);
-            }
-            
-            // Refresh network list
-            if (lvgl_port_lock(0)) {
-                refresh_network_list();
-                lvgl_port_unlock();
-            }
-        }
+        // Results will come via SX_EVT_WIFI_SCAN_COMPLETE event
+        // See wifi_event_handler() for processing
     }
 }
 
@@ -237,19 +243,16 @@ static void on_show(void) {
             lv_label_set_text(s_status_label, "Scanning...");
         }
         
-        s_network_count = sx_wifi_scan(s_networks, 20);
-        if (s_network_count > 0) {
-            if (s_status_label != NULL) {
-                char status[64];
-                snprintf(status, sizeof(status), "Found %d networks", s_network_count);
-                lv_label_set_text(s_status_label, status);
-            }
-            
-            if (lvgl_port_lock(0)) {
-                refresh_network_list();
-                lvgl_port_unlock();
-            }
-        }
+        // Phase 1: Post scan request event
+        sx_event_t scan_evt = {
+            .type = SX_EVT_WIFI_SCAN_REQUEST,
+            .arg0 = 0,
+            .arg1 = 0,
+            .ptr = NULL
+        };
+        sx_dispatcher_post_event(&scan_evt);
+        
+        // Results will come via event - see wifi_event_handler
     }
 }
 
@@ -290,19 +293,19 @@ static void update_ip_qr_code(void) {
         return;
     }
     
-    // Check if WiFi is connected
-    if (!sx_wifi_is_connected()) {
-        // Hide QR code container if not connected
-        if (s_qr_container != NULL) {
-            lv_obj_add_flag(s_qr_container, LV_OBJ_FLAG_HIDDEN);
+    // Phase 1: Check WiFi state from dispatcher state instead of direct call
+    sx_state_t state;
+    bool wifi_connected = false;
+    const char *ip_address = NULL;
+    
+    if (sx_dispatcher_get_state(&state) == ESP_OK) {
+        wifi_connected = state.ui.wifi_connected;
+        if (wifi_connected && strlen(state.ui.wifi_ip_address) > 0) {
+            ip_address = state.ui.wifi_ip_address;
         }
-        lvgl_port_unlock();
-        return;
     }
     
-    // Get IP address
-    const char *ip_address = sx_wifi_get_ip_address();
-    if (ip_address == NULL || strlen(ip_address) == 0) {
+    if (!wifi_connected || ip_address == NULL || strlen(ip_address) == 0) {
         lvgl_port_unlock();
         return;
     }
@@ -352,8 +355,27 @@ static void password_dialog_connect_cb(lv_event_t *e) {
             const char *password = lv_textarea_get_text(s_password_ta);
             ESP_LOGI(TAG, "Connecting to %s with password", s_pending_ssid);
             
-            esp_err_t ret = sx_wifi_connect(s_pending_ssid, password);
-            if (ret == ESP_OK) {
+            // Phase 1: Post connect request event with password
+            sx_wifi_connect_request_payload_t *payload = (sx_wifi_connect_request_payload_t *)malloc(sizeof(sx_wifi_connect_request_payload_t));
+            if (payload != NULL) {
+                strncpy(payload->ssid, s_pending_ssid, sizeof(payload->ssid) - 1);
+                payload->ssid[sizeof(payload->ssid) - 1] = '\0';
+                payload->has_password = (password != NULL && strlen(password) > 0);
+                if (payload->has_password) {
+                    strncpy(payload->password, password, sizeof(payload->password) - 1);
+                    payload->password[sizeof(payload->password) - 1] = '\0';
+                } else {
+                    payload->password[0] = '\0';
+                }
+                
+                sx_event_t connect_evt = {
+                    .type = SX_EVT_WIFI_CONNECT_REQUEST,
+                    .arg0 = payload->has_password ? 1 : 0,
+                    .arg1 = 0,
+                    .ptr = payload
+                };
+                sx_dispatcher_post_event(&connect_evt);
+                
                 // Save WiFi credentials to settings
                 sx_settings_set_string("wifi_ssid", s_pending_ssid);
                 if (password != NULL && strlen(password) > 0) {
@@ -484,17 +506,19 @@ static void show_password_dialog(const char *ssid) {
 static void on_update(const sx_state_t *state) {
     // Update connection status if available
     if (state != NULL && s_status_label != NULL) {
-        // Check WiFi state from state structure
-        // For now, just update based on WiFi service
-        if (sx_wifi_is_connected()) {
-            const char *ssid = sx_wifi_get_ssid();
-            if (ssid != NULL) {
-                char status[64];
-                snprintf(status, sizeof(status), "Connected: %s", ssid);
-                lv_label_set_text(s_status_label, status);
+        // Phase 1: Check WiFi state from dispatcher state
+        sx_state_t wifi_state;
+        if (sx_dispatcher_get_state(&wifi_state) == ESP_OK) {
+            if (wifi_state.ui.wifi_connected) {
+                const char *ssid = wifi_state.ui.wifi_ssid;
+                if (ssid != NULL && strlen(ssid) > 0) {
+                    char status[64];
+                    snprintf(status, sizeof(status), "Connected: %s", ssid);
+                    lv_label_set_text(s_status_label, status);
+                }
+                // Update IP and QR code when WiFi connects
+                update_ip_qr_code();
             }
-            // Update IP and QR code when WiFi connects
-            update_ip_qr_code();
         }
     }
 }

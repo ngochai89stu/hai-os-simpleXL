@@ -15,6 +15,8 @@
 #include "driver/gpio.h"
 #include "sdmmc_cmd.h"
 #include "sx_spi_bus_manager.h"
+#include "sx_dispatcher.h"  // Phase 3: Event posting for SD hot-unplug
+#include "sx_event.h"       // Phase 3: Event types
 
 static const char *TAG = "sx_sd";
 
@@ -199,6 +201,75 @@ esp_err_t sx_sd_read_file(const char *path, void *out_buf, size_t buf_size, size
     return ESP_OK;
 }
 
+// Phase 1: Write file to SD card
+esp_err_t sx_sd_write_file(const char *path, const void *data, size_t data_size, size_t *out_written) {
+    if (!s_mounted) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (path == NULL || data == NULL || data_size == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    char full[256];
+    esp_err_t ret = make_full_path(path, full, sizeof(full));
+    if (ret != ESP_OK) {
+        return ret;
+    }
+    
+    // Phase 1: Create directory if needed
+    char *dir_path = strdup(full);
+    if (dir_path == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    
+    // Find last '/' and create directory path
+    char *last_slash = strrchr(dir_path, '/');
+    if (last_slash != NULL) {
+        *last_slash = '\0';
+        // Create directory recursively (simple implementation)
+        char *p = dir_path;
+        if (p[0] == '/') p++; // Skip leading '/'
+        while (*p) {
+            if (*p == '/') {
+                *p = '\0';
+                sx_spi_bus_lock();
+                mkdir(dir_path, 0755); // Ignore errors if exists
+                sx_spi_bus_unlock();
+                *p = '/';
+            }
+            p++;
+        }
+        sx_spi_bus_lock();
+        mkdir(dir_path, 0755); // Create final directory
+        sx_spi_bus_unlock();
+    }
+    free(dir_path);
+    
+    sx_spi_bus_lock();
+    FILE *f = fopen(full, "wb");
+    if (!f) {
+        sx_spi_bus_unlock();
+        ESP_LOGE(TAG, "Failed to open file for writing: %s", full);
+        return ESP_FAIL;
+    }
+    
+    size_t written = fwrite(data, 1, data_size, f);
+    if (written != data_size) {
+        ESP_LOGW(TAG, "Partial write: expected %zu, wrote %zu", data_size, written);
+    }
+    
+    fflush(f); // Ensure data is written
+    fclose(f);
+    sx_spi_bus_unlock();
+    
+    if (out_written) {
+        *out_written = written;
+    }
+    
+    ESP_LOGI(TAG, "Wrote %zu bytes to %s", written, full);
+    return (written == data_size) ? ESP_OK : ESP_FAIL;
+}
+
 esp_err_t sx_sd_list_files(const char *dir_path, sx_sd_file_entry_t *entries, size_t max_count, size_t *out_count) {
     if (!s_mounted) {
         return ESP_ERR_INVALID_STATE;
@@ -214,6 +285,21 @@ esp_err_t sx_sd_list_files(const char *dir_path, sx_sd_file_entry_t *entries, si
     DIR *dir = opendir(full);
     if (dir == NULL) {
         sx_spi_bus_unlock();
+        
+        // Phase 3: Check if SD card was removed (hot-unplug detection)
+        if (!sx_sd_is_mounted()) {
+            // Post alert event to notify UI
+            sx_event_t evt = {
+                .type = SX_EVT_ALERT,
+                .priority = SX_EVT_PRIORITY_HIGH,
+                .arg0 = 0,
+                .arg1 = 0,
+                .ptr = (void*)"SD card removed"
+            };
+            sx_dispatcher_post_event(&evt);
+            ESP_LOGW(TAG, "SD card removed - posted alert event");
+        }
+        
         return ESP_FAIL;
     }
     

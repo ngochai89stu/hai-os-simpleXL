@@ -29,6 +29,8 @@ typedef struct {
     bool initialized;
     bool playing;
     uint8_t volume;
+    // Phase 1: Spectrum data (for UI visualization)
+    uint16_t spectrum_bands[4];  // [0]=Bass, [1]=Mid-low, [2]=Mid-high, [3]=High (0-255)
 } sx_audio_state_t;
 
 #define SX_UI_MESSAGE_MAX_LEN 256
@@ -73,10 +75,15 @@ typedef struct {
     uint8_t volume;
     bool volume_muted;
     
+    // Phase 1: STT/TTS state (break circular dependency)
+    bool stt_active;      // STT is currently active
+    bool tts_speaking;    // TTS is currently speaking
+    
     // WiFi state (detailed)
     bool wifi_connected;
     int8_t wifi_rssi;
     char wifi_ssid[SX_UI_WIFI_SSID_MAX_LEN];
+    char wifi_ip_address[16];  // Phase 1: IP address (e.g., "192.168.1.100")
 } sx_ui_state_t;
 
 // P0.4: State version and dirty mask (Section 5.1 SIMPLEXL_ARCH v1.3)

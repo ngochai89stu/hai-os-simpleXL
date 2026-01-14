@@ -30,6 +30,7 @@ const char *sx_sd_get_mount_point(void);
 
 // Basic file ops helpers
 esp_err_t sx_sd_read_file(const char *path, void *out_buf, size_t buf_size, size_t *out_read);
+esp_err_t sx_sd_write_file(const char *path, const void *data, size_t data_size, size_t *out_written);
 esp_err_t sx_sd_get_file_size(const char *path, size_t *out_size);
 
 // List files in directory (simple implementation)

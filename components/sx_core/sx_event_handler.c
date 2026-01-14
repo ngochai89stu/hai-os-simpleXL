@@ -39,24 +39,27 @@ esp_err_t sx_event_handler_unregister(sx_event_type_t event_type) {
     return ESP_OK;
 }
 
-bool sx_event_handler_process(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_process(const sx_event_t *evt, sx_state_t *state) {
     if (!s_initialized || evt == NULL || state == NULL) {
-        return false;
+        return 0;
     }
     
     if (evt->type >= MAX_EVENT_TYPES) {
         ESP_LOGW(TAG, "Invalid event type: %d", evt->type);
-        return false;
+        return 0;
     }
     
     sx_event_handler_t handler = s_handlers[evt->type];
     if (handler == NULL) {
         ESP_LOGD(TAG, "No handler registered for event type %d", evt->type);
-        return false;
+        return 0;
     }
     
+    // Phase 3: Handler returns dirty_mask directly
     return handler(evt, state);
 }
+
+
 
 
 

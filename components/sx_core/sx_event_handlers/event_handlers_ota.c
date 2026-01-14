@@ -51,12 +51,12 @@ static esp_err_t play_activation_sound(void) {
     return ret;
 }
 
-bool sx_event_handler_wifi_connected(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_wifi_connected(const sx_event_t *evt, sx_state_t *state) {
     (void)evt;
     (void)state;
     ESP_LOGI(TAG, "WiFi connected -> trigger OTA check");
     sx_ota_full_check_version();
-    return false; // state not updated here
+    return 0; // state not updated here
 }
 
 static void activation_sound_task(void *arg) {
@@ -88,9 +88,9 @@ static void activation_sound_task(void *arg) {
     vTaskDelete(NULL);
 }
 
-bool sx_event_handler_activation_required(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_activation_required(const sx_event_t *evt, sx_state_t *state) {
     const char *code = (const char *)evt->ptr;
-    if (!code || !state) return false;
+    if (!code || !state) return 0;
 
     // Update UI state via event-bus state
     state->ui.has_alert = true;
@@ -105,7 +105,8 @@ bool sx_event_handler_activation_required(const sx_event_t *evt, sx_state_t *sta
         xTaskCreate(activation_sound_task, "sx_act_snd", 4096, code_copy, tskIDLE_PRIORITY + 1, NULL);
     }
 
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI; // UI domain changed
 }
 
 // Helper: Start protocol (WebSocket or MQTT) based on settings from OTA response
@@ -177,8 +178,8 @@ static void start_protocol_from_settings(void) {
     }
 }
 
-bool sx_event_handler_activation_pending(const sx_event_t *evt, sx_state_t *state) {
-    if (!state || !evt) return false;
+uint32_t sx_event_handler_activation_pending(const sx_event_t *evt, sx_state_t *state) {
+    if (!state || !evt) return 0;
 
     // Show "pending" state while polling
     state->ui.has_alert = true;
@@ -187,23 +188,25 @@ bool sx_event_handler_activation_pending(const sx_event_t *evt, sx_state_t *stat
              "Dang cho xac nhan... (lan %u, cho %ums)",
              (unsigned)evt->arg0, (unsigned)evt->arg1);
     strncpy(state->ui.alert_emotion, "hourglass", sizeof(state->ui.alert_emotion) - 1);
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI; // UI domain changed
 }
 
-bool sx_event_handler_activation_timeout(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_activation_timeout(const sx_event_t *evt, sx_state_t *state) {
     (void)evt;
-    if (!state) return false;
+    if (!state) return 0;
 
     state->ui.has_alert = true;
     strncpy(state->ui.alert_status, "Activation", sizeof(state->ui.alert_status) - 1);
     strncpy(state->ui.alert_message, "Activation timeout", sizeof(state->ui.alert_message) - 1);
     strncpy(state->ui.alert_emotion, "circle_xmark", sizeof(state->ui.alert_emotion) - 1);
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI; // UI domain changed
 }
 
-bool sx_event_handler_activation_done(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_activation_done(const sx_event_t *evt, sx_state_t *state) {
     (void)evt;
-    if (!state) return false;
+    if (!state) return 0;
 
     state->ui.has_alert = true;
     strncpy(state->ui.alert_status, "Activation", sizeof(state->ui.alert_status) - 1);
@@ -213,10 +216,11 @@ bool sx_event_handler_activation_done(const sx_event_t *evt, sx_state_t *state) 
     // Start protocol after activation (like reference repo)
     start_protocol_from_settings();
 
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI; // UI domain changed
 }
 
-bool sx_event_handler_ota_finished(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_ota_finished(const sx_event_t *evt, sx_state_t *state) {
     (void)evt;
     (void)state;
     
@@ -228,16 +232,17 @@ bool sx_event_handler_ota_finished(const sx_event_t *evt, sx_state_t *state) {
         start_protocol_from_settings();
     }
     
-    return false; // state not updated
+    return 0; // state not updated
 }
 
-bool sx_event_handler_ota_error(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_ota_error(const sx_event_t *evt, sx_state_t *state) {
     const char *msg = (const char *)evt->ptr;
-    if (!msg || !state) return false;
+    if (!msg || !state) return 0;
 
     state->ui.has_alert = true;
     strncpy(state->ui.alert_status, "OTA Error", sizeof(state->ui.alert_status) - 1);
     strncpy(state->ui.alert_message, msg, sizeof(state->ui.alert_message) - 1);
     strncpy(state->ui.alert_emotion, "circle_xmark", sizeof(state->ui.alert_emotion) - 1);
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI; // UI domain changed
 }

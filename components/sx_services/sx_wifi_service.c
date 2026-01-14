@@ -12,6 +12,8 @@
 #include "sx_dispatcher.h"
 #include "sx_event.h"
 #include "sx_network_optimizer.h"
+#include "sx_settings_service.h"  // Phase 2: WiFi credentials persistence
+#include "sx_metrics.h"  // Phase 3: KPI metrics (WiFi reconnect time)
 
 static const char *TAG = "sx_wifi";
 
@@ -28,6 +30,9 @@ static EventGroupHandle_t s_wifi_event_group = NULL;
 static int s_retry_num = 0;
 static const int MAX_RETRY = 5;
 
+// Phase 3: KPI metrics - WiFi reconnect timing
+static uint32_t s_reconnect_start_ms = 0;
+
 // Connection info
 static char s_current_ssid[33] = {0};
 static char s_current_password[65] = {0};
@@ -35,6 +40,8 @@ static char s_ip_address[16] = {0};
 static int8_t s_rssi = 0;
 static uint8_t s_channel = 0;
 static bool s_connected = false;
+// Phase 0: Mutex to protect s_connected and connection state
+static SemaphoreHandle_t s_state_mutex = NULL;
 
 // Forward declarations
 static void sx_wifi_event_handler(void* arg, esp_event_base_t event_base,
@@ -116,6 +123,14 @@ esp_err_t sx_wifi_service_init(const sx_wifi_config_t *cfg) {
         return ESP_ERR_NO_MEM;
     }
     
+    // Phase 0: Create mutex to protect connection state
+    s_state_mutex = xSemaphoreCreateMutex();
+    if (s_state_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create state mutex");
+        vEventGroupDelete(s_wifi_event_group);
+        return ESP_ERR_NO_MEM;
+    }
+    
     s_initialized = true;
     ESP_LOGI(TAG, "WiFi service initialized");
     return ESP_OK;
@@ -146,6 +161,30 @@ esp_err_t sx_wifi_service_start(void) {
     
     s_started = true;
     ESP_LOGI(TAG, "WiFi service started");
+    
+    // Phase 2: Auto-connect to saved WiFi credentials
+    char saved_ssid[33] = {0};
+    char saved_password[65] = {0};
+    bool has_saved_credentials = false;
+    
+    if (sx_settings_get_string("wifi_ssid", saved_ssid, sizeof(saved_ssid)) == ESP_OK && strlen(saved_ssid) > 0) {
+        has_saved_credentials = true;
+        // Try to get password (may be empty for open networks)
+        sx_settings_get_string("wifi_pass", saved_password, sizeof(saved_password));
+        ESP_LOGI(TAG, "Found saved WiFi credentials for: %s", saved_ssid);
+        
+        // Auto-connect after a short delay to allow system to stabilize
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        ret = sx_wifi_connect(saved_ssid, (strlen(saved_password) > 0) ? saved_password : NULL);
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "Auto-connecting to saved WiFi network: %s", saved_ssid);
+        } else {
+            ESP_LOGW(TAG, "Failed to auto-connect to saved WiFi: %s", esp_err_to_name(ret));
+        }
+    } else {
+        ESP_LOGI(TAG, "No saved WiFi credentials found");
+    }
+    
     return ESP_OK;
 }
 
@@ -161,7 +200,11 @@ esp_err_t sx_wifi_service_stop(void) {
     }
     
     s_started = false;
-    s_connected = false;
+    // Phase 0: Protect state update with mutex
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_connected = false;
+        xSemaphoreGive(s_state_mutex);
+    }
     memset(s_current_ssid, 0, sizeof(s_current_ssid));
     memset(s_ip_address, 0, sizeof(s_ip_address));
     s_rssi = 0;
@@ -251,7 +294,12 @@ esp_err_t sx_wifi_connect(const char *ssid, const char *password) {
     }
     
     // Disconnect if already connected
-    if (s_connected) {
+    bool is_connected = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        is_connected = s_connected;
+        xSemaphoreGive(s_state_mutex);
+    }
+    if (is_connected) {
         sx_wifi_disconnect();
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -287,6 +335,9 @@ esp_err_t sx_wifi_connect(const char *ssid, const char *password) {
     xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
     s_retry_num = 0;
     
+    // Phase 3: KPI metrics - track reconnect start time
+    s_reconnect_start_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+
     // Connect
     ret = esp_wifi_connect();
     if (ret != ESP_OK) {
@@ -309,7 +360,17 @@ esp_err_t sx_wifi_disconnect(void) {
         return ret;
     }
     
-    s_connected = false;
+    // Phase 0: Protect state update with mutex
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        s_connected = false;
+        xSemaphoreGive(s_state_mutex);
+    }
+    
+    // Phase 2: Optionally clear saved credentials on manual disconnect
+    // (Commented out - keep credentials for auto-reconnect)
+    // sx_settings_set_str("wifi_ssid", "");
+    // sx_settings_set_str("wifi_pass", "");
+    
     memset(s_current_ssid, 0, sizeof(s_current_ssid));
     memset(s_ip_address, 0, sizeof(s_ip_address));
     s_rssi = 0;
@@ -320,7 +381,13 @@ esp_err_t sx_wifi_disconnect(void) {
 }
 
 bool sx_wifi_is_connected(void) {
-    return s_connected;
+    // Phase 0: Protect state read with mutex
+    bool connected = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        connected = s_connected;
+        xSemaphoreGive(s_state_mutex);
+    }
+    return connected;
 }
 
 const char *sx_wifi_get_ssid(void) {
@@ -345,9 +412,17 @@ static void sx_wifi_event_handler(void* arg, esp_event_base_t event_base,
         if (event_id == WIFI_EVENT_STA_START) {
             ESP_LOGI(TAG, "WiFi station started");
         } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
-            if (s_connected) {
+            // Phase 0: Protect state update with mutex
+            bool was_connected = false;
+            if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                was_connected = s_connected;
+                if (was_connected) {
+                    s_connected = false;
+                }
+                xSemaphoreGive(s_state_mutex);
+            }
+            if (was_connected) {
                 ESP_LOGI(TAG, "WiFi disconnected");
-                s_connected = false;
                 memset(s_ip_address, 0, sizeof(s_ip_address));
                 s_rssi = 0;
                 s_channel = 0;
@@ -378,6 +453,10 @@ static void sx_wifi_event_handler(void* arg, esp_event_base_t event_base,
                 ESP_LOGI(TAG, "Retrying WiFi connection (%d/%d) after %lu ms...", s_retry_num, MAX_RETRY, (unsigned long)delay_ms);
                 sx_network_optimizer_record_reconnect();
                 vTaskDelay(pdMS_TO_TICKS(delay_ms));
+                
+                // Phase 3: KPI metrics - track reconnect start time
+                s_reconnect_start_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+                
                 esp_wifi_connect();
                 xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
             } else {
@@ -403,9 +482,35 @@ static void sx_wifi_event_handler(void* arg, esp_event_base_t event_base,
                 s_rssi = ap_info.rssi;
             }
             
-            s_connected = true;
+            // Phase 0: Protect state update with mutex
+            if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+                s_connected = true;
+                xSemaphoreGive(s_state_mutex);
+            }
+            
+            // Phase 2: Save WiFi credentials after successful connection
+            if (strlen(s_current_ssid) > 0) {
+                esp_err_t save_ret = sx_settings_set_string("wifi_ssid", s_current_ssid);
+                if (save_ret == ESP_OK && strlen(s_current_password) > 0) {
+                    save_ret = sx_settings_set_string("wifi_pass", s_current_password);
+                }
+                if (save_ret == ESP_OK) {
+                    ESP_LOGI(TAG, "WiFi credentials saved to NVS");
+                } else {
+                    ESP_LOGW(TAG, "Failed to save WiFi credentials: %s", esp_err_to_name(save_ret));
+                }
+            }
+            
             xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
             
+            // Phase 3: KPI metrics - update reconnect timing
+            if (s_reconnect_start_ms > 0) {
+                uint32_t now_ms = (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+                uint32_t reconnect_ms = (now_ms >= s_reconnect_start_ms) ? (now_ms - s_reconnect_start_ms) : 0;
+                sx_metrics_update_wifi_reconnect(reconnect_ms);
+                s_reconnect_start_ms = 0;
+            }
+
             // Record successful connection
             sx_network_optimizer_record_connection(true);
             
@@ -417,6 +522,15 @@ static void sx_wifi_event_handler(void* arg, esp_event_base_t event_base,
                 .ptr = (void *)s_current_ssid
             };
             sx_dispatcher_post_event(&evt);
+            
+            // Phase 1: Also post state update event with IP address
+            sx_event_t state_evt = {
+                .type = SX_EVT_WIFI_STATE_UPDATE,
+                .arg0 = 1,  // connected = true
+                .arg1 = 0,
+                .ptr = (void *)s_ip_address  // IP address as string
+            };
+            sx_dispatcher_post_event(&state_evt);
         }
     }
 }

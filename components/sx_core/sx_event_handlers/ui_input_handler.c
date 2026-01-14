@@ -6,9 +6,9 @@
 
 static const char *TAG = "evt_handler_ui_input";
 
-bool sx_event_handler_ui_input(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_ui_input(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_UI_INPUT) {
-        return false;
+        return 0;
     }
     
     state->seq++;
@@ -35,8 +35,11 @@ bool sx_event_handler_ui_input(const sx_event_t *evt, sx_state_t *state) {
         state->ui.status_text = "ui_input";
     }
     
-    return true;
+    // Phase 3: Return dirty_mask instead of bool
+    return SX_STATE_DIRTY_UI; // UI domain changed
 }
+
+
 
 
 

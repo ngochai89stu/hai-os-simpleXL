@@ -5,9 +5,9 @@
 
 static const char *TAG = "evt_handler_radio";
 
-bool sx_event_handler_radio_error(const sx_event_t *evt, sx_state_t *state) {
+uint32_t sx_event_handler_radio_error(const sx_event_t *evt, sx_state_t *state) {
     if (evt->type != SX_EVT_RADIO_ERROR) {
-        return false;
+        return 0;
     }
     
     const char *error_msg = (const char *)evt->ptr;
@@ -21,8 +21,9 @@ bool sx_event_handler_radio_error(const sx_event_t *evt, sx_state_t *state) {
         state->ui.error_code = evt->arg0; // Use arg0 for error code if provided
         // Free error message copy (may be from pool or malloc)
         sx_event_free_string((char *)evt->ptr);
-        return true;
+        // Phase 3: Return dirty_mask instead of bool
+        return SX_STATE_DIRTY_AUDIO | SX_STATE_DIRTY_UI; // Radio error affects both audio and UI
     }
-    return false;
+    return 0;
 }
 

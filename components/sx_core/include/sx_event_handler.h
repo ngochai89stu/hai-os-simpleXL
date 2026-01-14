@@ -14,9 +14,10 @@ extern "C" {
  * 
  * @param evt Event to handle
  * @param state Current state (can be modified)
- * @return true if event was handled and state was modified, false otherwise
+ * @return dirty_mask indicating which domains changed (0 = no update needed)
+ *         Phase 3: Handler returns dirty_mask instead of bool to reduce coupling
  */
-typedef bool (*sx_event_handler_t)(const sx_event_t *evt, sx_state_t *state);
+typedef uint32_t (*sx_event_handler_t)(const sx_event_t *evt, sx_state_t *state);
 
 /**
  * @brief Register event handler for specific event type
@@ -40,9 +41,10 @@ esp_err_t sx_event_handler_unregister(sx_event_type_t event_type);
  * 
  * @param evt Event to process
  * @param state State to update
- * @return true if handled, false otherwise
+ * @return dirty_mask indicating which domains changed (0 = not handled or no update needed)
+ *         Phase 3: Returns dirty_mask instead of bool
  */
-bool sx_event_handler_process(const sx_event_t *evt, sx_state_t *state);
+uint32_t sx_event_handler_process(const sx_event_t *evt, sx_state_t *state);
 
 /**
  * @brief Initialize event handler system
@@ -52,6 +54,8 @@ esp_err_t sx_event_handler_init(void);
 #ifdef __cplusplus
 }
 #endif
+
+
 
 
 

@@ -49,6 +49,16 @@ static void sx_orchestrator_task(void *arg) {
     sx_event_handler_register(SX_EVT_PROTOCOL_HELLO_TIMEOUT, sx_event_handler_protocol_hello_timeout);
     sx_event_handler_register(SX_EVT_PROTOCOL_RECONNECTING, sx_event_handler_protocol_reconnecting);
 
+    // WiFi handlers (Phase 1: break circular dependency)
+    sx_event_handler_register(SX_EVT_WIFI_SCAN_REQUEST, sx_event_handler_wifi_scan_request);
+    sx_event_handler_register(SX_EVT_WIFI_CONNECT_REQUEST, sx_event_handler_wifi_connect_request);
+    sx_event_handler_register(SX_EVT_WIFI_STATE_UPDATE, sx_event_handler_wifi_state_update);
+    
+    // STT/TTS handlers (Phase 1: break circular dependency)
+    sx_event_handler_register(SX_EVT_STT_STATE_UPDATE, sx_event_handler_stt_state_update);
+    sx_event_handler_register(SX_EVT_TTS_STATE_UPDATE, sx_event_handler_tts_state_update);
+    sx_event_handler_register(SX_EVT_TTS_SPEAK_REQUEST, sx_event_handler_tts_speak_request);
+    
     // OTA/Activation handlers
     sx_event_handler_register(SX_EVT_WIFI_CONNECTED, sx_event_handler_wifi_connected);
     sx_event_handler_register(SX_EVT_ACTIVATION_REQUIRED, sx_event_handler_activation_required);
@@ -84,9 +94,15 @@ static void sx_orchestrator_task(void *arg) {
     st.ui.audio_recording = false;
     st.ui.volume = 0;
     st.ui.volume_muted = false;
+    // Phase 1: Initialize spectrum data
+    st.audio.spectrum_bands[0] = 0;
+    st.audio.spectrum_bands[1] = 0;
+    st.audio.spectrum_bands[2] = 0;
+    st.audio.spectrum_bands[3] = 0;
     st.ui.wifi_connected = false;
     st.ui.wifi_rssi = 0;
     st.ui.wifi_ssid[0] = '\0';
+    st.ui.wifi_ip_address[0] = '\0';  // Phase 1: Initialize IP address
     
     // P0.4: Update version and dirty_mask for UI domain changes
     sx_state_update_version_and_dirty(&st, SX_STATE_DIRTY_UI | SX_STATE_DIRTY_SYSTEM);
@@ -113,50 +129,11 @@ static void sx_orchestrator_task(void *arg) {
             sx_dispatcher_get_state(&st);
             
             // Process event using registry
-            // P0.4: Event handlers should return dirty_mask indicating which domains changed
-            uint32_t dirty_mask = 0;
-            if (sx_event_handler_process(&evt, &st)) {
-                // P0.4: Determine dirty_mask based on event type
-                // This is a simplified approach - in production, event handlers should return dirty_mask
-                switch (evt.type) {
-                    case SX_EVT_WIFI_CONNECTED:
-                    case SX_EVT_WIFI_DISCONNECTED:
-                    case SX_EVT_WIFI_SCAN_COMPLETE:
-                        dirty_mask = SX_STATE_DIRTY_WIFI;
-                        break;
-                    case SX_EVT_AUDIO_PLAYBACK_STARTED:
-                    case SX_EVT_AUDIO_PLAYBACK_STOPPED:
-                    case SX_EVT_AUDIO_PLAYBACK_PAUSED:
-                    case SX_EVT_AUDIO_PLAYBACK_RESUMED:
-                    case SX_EVT_AUDIO_RECORDING_STARTED:
-                    case SX_EVT_AUDIO_RECORDING_STOPPED:
-                    case SX_EVT_AUDIO_ERROR:
-                        dirty_mask = SX_STATE_DIRTY_AUDIO;
-                        break;
-                    case SX_EVT_UI_INPUT:
-                    case SX_EVT_UI_READY:
-                    case SX_EVT_CHATBOT_STT:
-                    case SX_EVT_CHATBOT_TTS_SENTENCE:
-                    case SX_EVT_CHATBOT_EMOTION:
-                    case SX_EVT_CHATBOT_CONNECTED:
-                    case SX_EVT_CHATBOT_DISCONNECTED:
-                    case SX_EVT_ALERT:
-                    case SX_EVT_ERROR:
-                        dirty_mask = SX_STATE_DIRTY_UI;
-                        break;
-                    case SX_EVT_SYSTEM_REBOOT:
-                    case SX_EVT_SYSTEM_COMMAND:
-                    case SX_EVT_BOOTSTRAP_STARTED:
-                    case SX_EVT_BOOTSTRAP_READY:
-                        dirty_mask = SX_STATE_DIRTY_SYSTEM;
-                        break;
-                    default:
-                        // Default: assume UI domain changed
-                        dirty_mask = SX_STATE_DIRTY_UI;
-                        break;
-                }
-                
-                // P0.4: Update version and dirty_mask
+            // Phase 3: Handler returns dirty_mask directly (reduces coupling)
+            uint32_t dirty_mask = sx_event_handler_process(&evt, &st);
+            
+            if (dirty_mask != 0) {
+                // Handler returned dirty_mask - use it directly
                 sx_state_update_version_and_dirty(&st, dirty_mask);
                 sx_dispatcher_set_state(&st);
                 
@@ -164,6 +141,7 @@ static void sx_orchestrator_task(void *arg) {
                 sx_metrics_set_state_version(st.version);
                 sx_metrics_inc_state_updates();
             }
+            // Note: If dirty_mask == 0, handler either didn't handle the event or didn't update state
         }
         
         // Optimized: Sleep only if no work, otherwise continue immediately

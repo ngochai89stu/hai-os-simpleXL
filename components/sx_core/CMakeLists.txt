@@ -11,6 +11,8 @@ idf_component_register(
         "sx_event_handlers/chatbot_handler.c"
         "sx_event_handlers/audio_handler.c"
         "sx_event_handlers/radio_handler.c"
+        "sx_event_handlers/wifi_handler.c"
+        "sx_event_handlers/stt_tts_handler.c"
         "sx_event_handlers/event_handlers_ota.c"
         "sx_service_if.c"  # P1.4: Service lifecycle interface (Section 6.1 SIMPLEXL_ARCH v1.3)
         "sx_metrics.c"  # P2.6: Metrics collection system (Section 9.1 SIMPLEXL_ARCH v1.3)
@@ -33,6 +35,7 @@ idf_component_register(
     PRIV_REQUIRES
         esp_http_client
         json
+        sx_services  # Phase 2: Gapless playback - audio_handler needs sx_audio_play_file()
         # These are needed because service headers included in .c files depend on them
         # PRIV_REQUIRES ensures they're only available during compilation, not as public API
 )

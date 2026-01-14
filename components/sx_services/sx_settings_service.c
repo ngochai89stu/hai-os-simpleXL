@@ -8,8 +8,22 @@
 static const char *TAG = "sx_settings";
 static const char *NVS_NAMESPACE = "sx_settings";
 
+// Phase 0: NVS constraints
+#define SX_SETTINGS_NVS_KEY_MAX_LEN 15  // ESP-IDF NVS key length limit
+
 static nvs_handle_t s_nvs_handle = 0;
 static bool s_initialized = false;
+
+// Phase 0: helper to validate key length
+static bool sx_settings_validate_key(const char *key) {
+    if (key == NULL) return false;
+    size_t len = strlen(key);
+    if (len == 0 || len > SX_SETTINGS_NVS_KEY_MAX_LEN) {
+        ESP_LOGE(TAG, "NVS key '%s' length %zu exceeds limit %d", key, len, SX_SETTINGS_NVS_KEY_MAX_LEN);
+        return false;
+    }
+    return true;
+}
 
 esp_err_t sx_settings_service_init(void) {
     if (s_initialized) {
@@ -29,7 +43,7 @@ esp_err_t sx_settings_service_init(void) {
 }
 
 esp_err_t sx_settings_set_string(const char *key, const char *value) {
-    if (!s_initialized || key == NULL || value == NULL) {
+    if (!s_initialized || value == NULL || !sx_settings_validate_key(key)) {
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -38,8 +52,8 @@ esp_err_t sx_settings_set_string(const char *key, const char *value) {
         ESP_LOGE(TAG, "Failed to set string '%s': %s", key, esp_err_to_name(ret));
         return ret;
     }
-    
-    return ESP_OK;
+    // Phase 0: auto-commit
+    return sx_settings_commit();
 }
 
 esp_err_t sx_settings_get_string(const char *key, char *value, size_t max_len) {
@@ -76,7 +90,7 @@ esp_err_t sx_settings_get_string_default(const char *key, char *value, size_t ma
 }
 
 esp_err_t sx_settings_set_int(const char *key, int32_t value) {
-    if (!s_initialized || key == NULL) {
+    if (!s_initialized || !sx_settings_validate_key(key)) {
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -85,8 +99,7 @@ esp_err_t sx_settings_set_int(const char *key, int32_t value) {
         ESP_LOGE(TAG, "Failed to set int '%s': %s", key, esp_err_to_name(ret));
         return ret;
     }
-    
-    return ESP_OK;
+    return sx_settings_commit();
 }
 
 esp_err_t sx_settings_get_int(const char *key, int32_t *value) {
@@ -144,7 +157,7 @@ esp_err_t sx_settings_get_bool_default(const char *key, bool *value, bool defaul
 }
 
 esp_err_t sx_settings_set_blob(const char *key, const void *value, size_t len) {
-    if (!s_initialized || key == NULL || value == NULL || len == 0) {
+    if (!s_initialized || value == NULL || len == 0 || !sx_settings_validate_key(key)) {
         return ESP_ERR_INVALID_ARG;
     }
     
@@ -153,8 +166,7 @@ esp_err_t sx_settings_set_blob(const char *key, const void *value, size_t len) {
         ESP_LOGE(TAG, "Failed to set blob '%s': %s", key, esp_err_to_name(ret));
         return ret;
     }
-    
-    return ESP_OK;
+    return sx_settings_commit();
 }
 
 esp_err_t sx_settings_get_blob(const char *key, void *value, size_t *len) {
@@ -252,6 +264,8 @@ esp_err_t sx_settings_erase_all(void) {
     ESP_LOGI(TAG, "All settings erased");
     return ESP_OK;
 }
+
+
 
 
 

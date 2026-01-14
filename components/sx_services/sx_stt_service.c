@@ -1,6 +1,7 @@
 #include "sx_stt_service.h"
 #include "sx_dispatcher.h"
 #include "sx_event.h"
+#include "sx_event_string_pool.h"
 #include "sx_settings_service.h"
 
 #include <esp_log.h>
@@ -24,7 +25,8 @@ static void *s_user_data = NULL;
 static char s_last_error[256] = {0};
 
 // Audio chunk queue
-#define STT_CHUNK_QUEUE_SIZE 5
+// Phase 0: Increase queue size to reduce drop
+#define STT_CHUNK_QUEUE_SIZE 10
 static QueueHandle_t s_chunk_queue = NULL;
 static TaskHandle_t s_stt_task_handle = NULL;
 static SemaphoreHandle_t s_stt_mutex = NULL;
@@ -40,7 +42,14 @@ static void sx_stt_task(void *arg) {
     
     ESP_LOGI(TAG, "STT task started");
     
-    while (s_active) {
+    // Phase 0: Check s_active with mutex protection
+    bool active = false;
+    if (s_stt_mutex != NULL && xSemaphoreTake(s_stt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        active = s_active;
+        xSemaphoreGive(s_stt_mutex);
+    }
+    
+    while (active) {
         stt_audio_chunk_t chunk;
         if (xQueueReceive(s_chunk_queue, &chunk, pdMS_TO_TICKS(100)) == pdTRUE) {
             // Send audio chunk to STT endpoint
@@ -103,7 +112,8 @@ static void sx_stt_task(void *arg) {
                                             .type = SX_EVT_UI_INPUT,
                                             .arg0 = 0,
                                             .arg1 = 0,
-                                            .ptr = strdup(transcript->valuestring), // Allocate copy for event
+                                            // Phase 0: Use sx_event_alloc_string() instead of strdup() to prevent memory leak
+                                            .ptr = sx_event_alloc_string(transcript->valuestring),
                                         };
                                         sx_dispatcher_post_event(&evt);
                                     }
@@ -124,6 +134,12 @@ static void sx_stt_task(void *arg) {
             
             esp_http_client_cleanup(client);
             free(chunk.pcm);
+        }
+        
+        // Phase 0: Re-check s_active with mutex protection
+        if (s_stt_mutex != NULL && xSemaphoreTake(s_stt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            active = s_active;
+            xSemaphoreGive(s_stt_mutex);
         }
     }
     
@@ -222,6 +238,16 @@ esp_err_t sx_stt_start_session(sx_stt_result_cb_t callback, void *user_data) {
     
     xSemaphoreGive(s_stt_mutex);
     ESP_LOGI(TAG, "STT session started");
+    
+    // Phase 1: Post state update event
+    sx_event_t evt = {
+        .type = SX_EVT_STT_STATE_UPDATE,
+        .arg0 = 1,  // active = true
+        .arg1 = 0,
+        .ptr = NULL
+    };
+    sx_dispatcher_post_event(&evt);
+    
     return ESP_OK;
 }
 
@@ -258,6 +284,16 @@ esp_err_t sx_stt_stop_session(void) {
     
     xSemaphoreGive(s_stt_mutex);
     ESP_LOGI(TAG, "STT session stopped");
+    
+    // Phase 1: Post state update event
+    sx_event_t evt = {
+        .type = SX_EVT_STT_STATE_UPDATE,
+        .arg0 = 0,  // active = false
+        .arg1 = 0,
+        .ptr = NULL
+    };
+    sx_dispatcher_post_event(&evt);
+    
     return ESP_OK;
 }
 
@@ -287,7 +323,13 @@ esp_err_t sx_stt_send_audio_chunk(const int16_t *pcm, size_t sample_count) {
 }
 
 bool sx_stt_is_active(void) {
-    return s_active;
+    // Phase 0: Protect state read with mutex
+    bool active = false;
+    if (s_stt_mutex != NULL && xSemaphoreTake(s_stt_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        active = s_active;
+        xSemaphoreGive(s_stt_mutex);
+    }
+    return active;
 }
 
 const char* sx_stt_get_last_error(void) {

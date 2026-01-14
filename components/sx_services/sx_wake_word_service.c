@@ -34,6 +34,8 @@ static sx_wake_word_detected_cb_t s_detected_callback = NULL;
 static void *s_user_data = NULL;
 static TaskHandle_t s_wake_word_task_handle = NULL;
 static QueueHandle_t s_audio_queue = NULL;
+// Phase 0: Mutex to protect s_active
+static SemaphoreHandle_t s_state_mutex = NULL;
 
 // Static buffers for settings-loaded configuration
 static char s_settings_model_path[256] = {0};
@@ -52,12 +54,22 @@ static void sx_wake_word_task(void *arg) {
     int16_t *audio_buffer = (int16_t *)malloc(AUDIO_BUFFER_SAMPLES * sizeof(int16_t));
     if (audio_buffer == NULL) {
         ESP_LOGE(TAG, "Failed to allocate audio buffer");
-        s_active = false;
+        if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_active = false;
+            xSemaphoreGive(s_state_mutex);
+        }
         vTaskDelete(NULL);
         return;
     }
     
-    while (s_active) {
+    // Phase 0: Check s_active with mutex protection
+    bool active = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        active = s_active;
+        xSemaphoreGive(s_state_mutex);
+    }
+    
+    while (active) {
         // Get audio from queue (fed by recording service or AFE)
         if (s_audio_queue != NULL) {
             if (xQueueReceive(s_audio_queue, audio_buffer, pdMS_TO_TICKS(100)) == pdTRUE) {
@@ -71,6 +83,12 @@ static void sx_wake_word_task(void *arg) {
         } else {
             // No queue, wait a bit
             vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        
+        // Phase 0: Re-check s_active with mutex protection
+        if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            active = s_active;
+            xSemaphoreGive(s_state_mutex);
         }
     }
     
@@ -145,6 +163,14 @@ esp_err_t sx_wake_word_service_init(const sx_wake_word_config_t *config) {
              s_config.type, s_config.threshold,
              s_config.model_path ? s_config.model_path : "(none)");
     
+    // Phase 0: Create mutex to protect state
+    s_state_mutex = xSemaphoreCreateMutex();
+    if (s_state_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create state mutex");
+        vQueueDelete(s_audio_queue);
+        return ESP_ERR_NO_MEM;
+    }
+    
     s_initialized = true;
     return ESP_OK;
 }
@@ -154,7 +180,13 @@ esp_err_t sx_wake_word_start(sx_wake_word_detected_cb_t callback, void *user_dat
         return ESP_ERR_INVALID_STATE;
     }
     
+    // Phase 0: Protect state check and update with mutex
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    
     if (s_active) {
+        xSemaphoreGive(s_state_mutex);
         return ESP_ERR_INVALID_STATE; // Already active
     }
     
@@ -171,11 +203,15 @@ esp_err_t sx_wake_word_start(sx_wake_word_detected_cb_t callback, void *user_dat
 #endif
     
     s_active = true;
+    xSemaphoreGive(s_state_mutex);
     
     // Create wake word detection task
     BaseType_t task_ret = xTaskCreate(sx_wake_word_task, "sx_wake_word", 4096, NULL, 5, &s_wake_word_task_handle);
     if (task_ret != pdPASS) {
-        s_active = false;
+        if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            s_active = false;
+            xSemaphoreGive(s_state_mutex);
+        }
         s_detected_callback = NULL;
         s_user_data = NULL;
         return ESP_ERR_NO_MEM;
@@ -186,11 +222,22 @@ esp_err_t sx_wake_word_start(sx_wake_word_detected_cb_t callback, void *user_dat
 }
 
 esp_err_t sx_wake_word_stop(void) {
-    if (!s_initialized || !s_active) {
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    // Phase 0: Protect state check and update with mutex
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
+    
+    if (!s_active) {
+        xSemaphoreGive(s_state_mutex);
         return ESP_ERR_INVALID_STATE;
     }
     
     s_active = false;
+    xSemaphoreGive(s_state_mutex);
     
     // Wait for task to finish
     if (s_wake_word_task_handle != NULL) {
@@ -209,7 +256,13 @@ esp_err_t sx_wake_word_stop(void) {
 }
 
 bool sx_wake_word_is_active(void) {
-    return s_active;
+    // Phase 0: Protect state read with mutex
+    bool active = false;
+    if (s_state_mutex != NULL && xSemaphoreTake(s_state_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        active = s_active;
+        xSemaphoreGive(s_state_mutex);
+    }
+    return active;
 }
 
 esp_err_t sx_wake_word_feed_audio(const int16_t *pcm, size_t sample_count) {

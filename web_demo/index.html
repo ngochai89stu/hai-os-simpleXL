@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SimpleXL – Web Demo</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #111;
+      color: #eee;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #canvas-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    canvas {
+      image-rendering: pixelated;
+    }
+    #controls {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.75rem;
+      background: #222;
+      justify-content: center;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      background: #444;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background: #666;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container">
+    <!-- The canvas will be injected by Emscripten runtime -->
+    <div id="loading">Loading WebAssembly…</div>
+  </div>
+  <div id="controls">
+    <button data-screen="boot">Boot-screen</button>
+    <button data-screen="home">Home</button>
+    <button data-screen="music">Music Player</button>
+    <button data-screen="settings">Settings</button>
+  </div>
+  <script src="ui_demo.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

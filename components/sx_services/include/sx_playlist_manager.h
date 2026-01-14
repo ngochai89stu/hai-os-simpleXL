@@ -80,6 +80,10 @@ size_t sx_playlist_get_count(void);
 // Album Art (Phase 1: Hybrid Music Screen)
 esp_err_t sx_playlist_get_cover_path(size_t track_index, char *path, size_t path_len);
 
+// Phase 1: Playlist Persistence (JSON on SD card)
+esp_err_t sx_playlist_save_to_file(const char *file_path);
+esp_err_t sx_playlist_load_from_file(const char *file_path);
+
 #ifdef __cplusplus
 }
 #endif

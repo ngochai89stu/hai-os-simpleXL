@@ -141,3 +141,5 @@ A: Kiểm tra baudrate, cáp USB, và đảm bảo không có lỗi trong firmwa
 
 
 
+
+

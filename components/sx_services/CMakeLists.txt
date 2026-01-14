@@ -2,6 +2,11 @@ idf_component_register(
     SRCS
            "sx_service_helpers/sx_http_client.cpp"
            "sx_audio_service.c"
+           "sx_audio_service_lifecycle.c"
+           "sx_wifi_service_lifecycle.c"
+           "sx_sd_service_lifecycle.c"
+           "sx_tts_service_lifecycle.c"
+           "sx_stt_service_lifecycle.c"
                "sx_audio_eq.c"
                "sx_audio_reverb.c"
                "sx_audio_ducking.c"
